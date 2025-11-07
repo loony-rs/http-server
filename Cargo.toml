@@ -3,6 +3,7 @@ authors = ["Sankar boro <sankar.boro@yahoo.com>"]
 edition = "2024"
 name = "http-server"
 version = "0.0.1"
+license = "MIT OR Apache-2.0"
 
 [[bin]]
 name = "server"
