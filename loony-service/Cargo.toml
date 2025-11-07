@@ -1,0 +1,11 @@
+[package]
+name = "loony-service"
+version = "0.1.0"
+authors = ["Sankar boro <sankar.boro@yahoo.com>"]
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+futures = "0.3.31"
+pin-project = "1.1.10"

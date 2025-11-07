@@ -1,0 +1,364 @@
+use std::{
+    future::Future, pin::Pin, task::{Context, Poll}
+};
+use loony_service::{
+    Service,
+    ServiceFactory
+};
+use crate::{
+    extract::{Extract, FromRequest}, 
+    handler::{Factory, Handler}, 
+    resource::Resource, responder::Responder, scope::Scope, service::{AppServiceFactory, HttpServiceFactory, ServiceFactoryWrapper, ServiceRequest, ServiceResponse}
+};
+
+#[derive(Clone)]
+pub enum Method {
+  GET,
+  POST,
+}
+
+pub type BoxedRouteService = Box<
+    dyn Service<
+        Request=ServiceRequest,
+        Response=ServiceResponse,
+        Error=(),
+        Future=Pin<Box<dyn Future<Output=Result<ServiceResponse, ()>>>>
+    >
+>;
+
+pub type BoxedRouteServiceFactory = Box<
+    dyn ServiceFactory<
+        Request=ServiceRequest,
+        Response=ServiceResponse,
+        Error=(),
+        Service=BoxedRouteService,
+        Future=Pin<Box<dyn Future<Output=Result<BoxedRouteService, ()>>>>,
+        Config=(),
+        InitError=()
+    >
+>;
+
+
+pub type BoxService = Pin<
+    Box<
+        dyn Future<Output=Result<BoxedRouteService, ()>>
+    >
+>;
+
+pub struct Router {
+    pub services: Vec<Box<dyn AppServiceFactory>>,
+}
+
+impl Router {
+    pub fn new() -> Self {
+        Router { 
+            services: Vec::new()
+        }
+    }
+
+    pub fn route(mut self, route: Route) -> Self {
+        self.services.push(Box::new(Resource::new("".to_string()).route(route)));
+        self
+    }
+
+
+    pub fn service<T>(mut self, factory: T) -> Self
+    where 
+      T: HttpServiceFactory + 'static
+    {
+      self.services.push(Box::new(ServiceFactoryWrapper::new(factory)));
+      self
+    }
+}
+
+// #[derive(Clone)]
+pub struct Route {
+    pub path: String,
+    pub service: BoxedRouteServiceFactory,
+    pub method: Method,
+}
+
+impl<'route> Route {
+    pub fn new(path: &str) -> Route {
+        Route {
+            path: path.to_owned(),
+            service: Box::new(
+                RouteServiceWrapper::new(
+                    Extract::new(
+                        Handler::new(default)
+                    )
+                )
+            ),
+            method: Method::GET,
+        }
+    }
+
+    pub fn to<T, P, R, O>(mut self, factory: T) -> Self 
+    where 
+        T: Factory<P, R, O> + Clone + 'static, 
+        P: FromRequest + 'static,
+        R: Future<Output=O> + 'static, 
+        O: Responder + 'static, 
+    {
+        
+        let service = Box::new(RouteServiceWrapper::new(Extract::new(Handler::new(factory))));
+        self.service = service;
+        self
+    }
+
+    pub fn method(mut self, method: Method) -> Self {
+        self.method = method;
+        self
+    }
+}
+
+pub struct RouteService {
+    service: BoxedRouteService,
+    method: Method,
+}
+
+impl Service for RouteService {
+    type Request = ServiceRequest;
+    type Response = ServiceResponse;
+    type Error = ();
+    type Future = Pin<Box<dyn Future<Output=Result<Self::Response, ()>>>>;
+
+    fn call(&mut self, req: ServiceRequest) -> Self::Future {
+        self.service.call(req)
+    }
+}
+
+impl ServiceFactory for Route {
+    type Request = ServiceRequest;
+    type Response = ServiceResponse;
+    type Error = ();
+    type Service = RouteService;
+    type InitError = ();
+    type Config = ();
+    type Future = RouteFutureService;
+
+    fn new_service(&self, _: ()) -> Self::Future {
+        let fut = self.service.new_service(());
+        RouteFutureService { fut, method: self.method.clone() }
+    }
+}
+
+#[pin_project::pin_project]
+pub struct RouteFutureService {
+    #[pin]
+    pub fut: BoxService,
+    pub method: Method,
+}
+
+impl Future for RouteFutureService {
+    type Output = Result<RouteService, ()>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+
+        match this.fut.poll(cx)? {
+            Poll::Ready(service) => Poll::Ready(Ok(RouteService {
+                service,
+                method: this.method.clone(),
+            })),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+pub struct RouteServiceWrapper<T> 
+where
+    T: ServiceFactory<Request = ServiceRequest>
+{
+    factory: T,
+}
+
+impl<T> RouteServiceWrapper<T> 
+where
+    T: ServiceFactory<Request = ServiceRequest>
+{
+    pub fn new(factory: T) -> Self {
+        RouteServiceWrapper {
+            factory,
+        }
+    }
+}
+
+impl<T> ServiceFactory for RouteServiceWrapper<T> 
+where
+    T: ServiceFactory<
+        Config = (),
+        Request = ServiceRequest,
+        Response = ServiceResponse,
+        Error = (),
+        InitError = ()
+    >,
+    T::Future: 'static,
+    T::Service: 'static,
+    <T::Service as Service>::Future: 'static,
+{
+    type Request = ServiceRequest;
+    type Response = ServiceResponse;
+    type Config = ();
+    type Error = ();
+    type InitError = ();
+    type Service = BoxedRouteService;
+    type Future = Pin<Box<dyn Future<Output=Result<Self::Service, ()>>>>;
+
+    fn new_service(&self, _: Self::Config) -> Self::Future {
+        let fut = self.factory.new_service(());
+        Box::pin(MakeFut { fut })
+    }
+}
+
+#[pin_project::pin_project]
+struct MakeFut<F> {
+    #[pin]
+    fut: F
+}
+
+impl<F, S> Future for MakeFut<F>
+where
+    F: Future<Output = Result<S, ()>>,
+    S: Service<
+        Request = ServiceRequest,
+        Response = ServiceResponse,
+        Error = (),
+    > + 'static,
+    <S as Service>::Future: 'static,
+{
+    type Output = Result<BoxedRouteService, ()>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let fut = self.project();
+        match fut.fut.poll(cx) {
+            Poll::Ready(Ok(svc)) => {
+                let service: BoxedRouteService = Box::new(RouteHandlerService { factory: svc });
+                Poll::Ready(Ok(service))
+            }
+            Poll::Ready(Err(_)) => Poll::Ready(Err(())),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+#[pin_project::pin_project]
+struct MakeService<F> {
+    #[pin]
+    inner: F,
+}
+
+struct RouteHandlerService<T: Service> {
+    factory:T 
+}
+
+impl<T> Service for RouteHandlerService<T> 
+where
+    T::Future: 'static,
+    T: Service<
+        Request = ServiceRequest,
+        Response = ServiceResponse,
+        Error = (),
+    >,
+{
+    type Request = ServiceRequest;
+    type Response = ServiceResponse;
+    type Error = ();
+    type Future = Pin<Box<dyn Future<Output=Result<ServiceResponse, ()>>>>;
+
+    fn call(&mut self, req: Self::Request) -> Self::Future {
+        let fut = self.factory.call(req);
+        Box::pin(CallFut { inner: fut })
+    }
+}
+
+#[pin_project::pin_project]
+struct CallFut<F> {
+    #[pin]
+    inner: F,
+}
+
+impl<F> Future for CallFut<F>
+where
+    F: Future<Output = Result<ServiceResponse, ()>>,
+{
+    type Output = Result<ServiceResponse, ()>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match self.project().inner.poll(cx)? {
+            Poll::Ready(service) => Poll::Ready(Ok(service)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+fn method(path: &str, method: Method) -> Route {
+    Route::new(path).method(method)
+}
+
+pub fn get(path: &str) -> Route {
+    method(path, Method::GET)
+}
+
+pub fn post(path: &str) -> Route {
+    method(path, Method::POST)
+}
+
+pub fn scope(scope: &str) -> Scope {
+  Scope::new(scope)
+}
+
+pub async fn default() -> String {
+    "".to_string()
+}
+
+// #[cfg(test)]
+// mod tests {
+//     use futures::{FutureExt, executor::block_on};
+//     use crate::request::HttpRequest;
+//     use super::*;
+
+//     async fn index(_: String) -> String {
+//         "Hello World!".to_string()
+//     }
+
+//     #[test]
+//     fn route() {
+//         let sr = ServiceRequest(HttpRequest { url: "/home".to_string(), extensions: &Extensions::new() });
+//         let r = Route::new("/home");
+//         let r = r.route(index);
+//         let a = r.new_service(());
+//         let mut b = block_on(a).unwrap();
+//         let c = b.call(sr);
+//         let d = block_on(c).unwrap();
+//         let e = d.0.value;
+//         assert_eq!("Hello World!".to_string(), e);
+//     }
+// }
+
+// struct RouteHandlerService<T: Service> {
+//     factory:T 
+// }
+
+// impl<T> Service for RouteHandlerService<T> 
+// where
+//     T::Future: 'static,
+//     T: Service<
+//         Request = ServiceRequest,
+//         Response = ServiceResponse,
+//         Error = (),
+//     >,
+// {
+//     type Request = ServiceRequest;
+//     type Response = ServiceResponse;
+//     type Error = ();
+//     type Future = Pin<Box<dyn Future<Output=Result<ServiceResponse, ()>>>>;
+
+//     fn call(&mut self, req: Self::Request) -> Self::Future {
+//         let a = &mut self.factory;
+//         let b = block_on(a.call(req));
+//         let c = ready(b);
+//         let d = Box::pin(c);
+//         d
+//     }
+// }

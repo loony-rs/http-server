@@ -1,0 +1,29 @@
+[package]
+name = "loony-server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+slab = { workspace = true }
+deadpool-postgres = { workspace = true }
+tokio = { workspace = true }
+derive_more = { workspace = true }
+futures = { workspace = true }
+tokio-postgres = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+fxhash = { workspace = true }
+http = { workspace = true }
+httparse = { workspace = true }
+multipart = { workspace = true }
+socket2 = { workspace = true }
+ahash = { workspace = true }
+bytes = { workspace = true }
+pin-project = { workspace = true }
+futures-util = { workspace = true }
+uuid = { workspace = true }
+cargo-expand = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+async-std = { workspace = true }
+loony-service = { workspace = true }
