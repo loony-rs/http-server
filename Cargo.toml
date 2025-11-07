@@ -27,6 +27,7 @@ log = { workspace = true }
 slab = { workspace = true }
 loony-service = { workspace = true }
 loony-server = { workspace = true }
+socket2.workspace = true
 
 [workspace.dependencies]
 loony-service = {path = "./loony-service"}

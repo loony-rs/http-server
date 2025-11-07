@@ -1,91 +1,30 @@
-use crate::{builder::Builder, connection::Connection, error::*, response::HttpResponse};
+use crate::{connection::Connection, error::*, response::HttpResponse};
 use ahash::AHashMap;
 use async_std::task::block_on;
 use loony_service::{IntoServiceFactory, Service, ServiceFactory};
 use crate::{app_service::AppHttpService, extensions::Extensions, request::HttpRequest, resource::ResourceService, service::ServiceRequest};
 use std::{cell::RefCell, marker::PhantomData, net::TcpStream, rc::Rc, time::Duration};
+use socket2::{Socket, Domain, Type};
+use std::net::TcpListener;
 
 // pub type AppInstance = Box<dyn Fn() -> App + 'static>;
 
-pub struct HttpServer<F, I, T> 
-where F: Fn() -> I + Send + Clone + 'static,
-I: IntoServiceFactory<T>,
-T: ServiceFactory,
-{
-    app: F,
-    builder: Builder,
+pub struct Run {
     routes: AHashMap<String, Rc<RefCell<ResourceService>>>,
     extensions: Rc<Extensions>,
-    config: ServerConfig,
-    _p: PhantomData<T>
+    listener: std::net::TcpListener,
 }
 
-impl<F, I, T> HttpServer<F, I, T> 
-where F: Fn() -> I + Send + Clone + 'static,
-    I: IntoServiceFactory<T>,
-    T: ServiceFactory<Request=(), Config = (), Service = AppHttpService>,
-{
-    pub fn new(app: F) -> Self {
-        Self { 
-            app, 
-            builder: Builder::new(),
-            routes: AHashMap::new(),
-            extensions: Rc::new(Extensions::new()),
-            config: ServerConfig::default(),
-            _p: PhantomData,
-        }
-    }
-
-    /// Configures the server with custom settings
-    pub fn with_config(mut self, config: ServerConfig) -> Self {
-        self.config = config;
-        self
-    }
-
-    /// Starts the server and initializes all services
-    fn initialize_services(&mut self) ->  ServerResult<()> {
-        let app = (self.app)();
-        let app_factory = app.into_factory();
-        let app_service = app_factory.new_service(());
-        
-        let http_service: Result<AppHttpService, T::InitError> = block_on(app_service);
-        
-        match http_service {
-            Ok(service) => {
-                self.routes = service.routes;
-                self.extensions = Rc::new(service.extensions);
-                Ok(())
-            }
-            Err(_) => {
-                Err(ServerError::service_init_error(String::from("Failed to initialize app services.")))
-            }
-        }
-    }
-
-    /// Runs the HTTP server and starts accepting connections
-    ///
-    /// This method blocks the current thread and runs the server indefinitely
-    ///
-    /// # Panics
-    ///
-    /// Panics if the server fails to start or service initialization fails
-    pub fn run(&mut self) {
-        
-        if let Err(e) = self.initialize_services() {
-            panic!("Failed to start server: {}", e);
-        }
-
-        let listener = self.builder.build();
-            // .expect("Failed to build server listener");
-
+impl Run {
+    fn run(&self) {
         loop {
-            let stream = listener.recv().unwrap();
+            let (stream, _) = self.listener.accept().unwrap();
             // let response_builder = Response::new(&self.routes, self.extensions.clone());            
             self.handle_connection(stream).unwrap();
         }
     }
 
-  /// Handles an individual TCP connection
+    /// Handles an individual TCP connection
     fn handle_connection(
         &self, 
         stream: TcpStream,
@@ -156,6 +95,124 @@ where F: Fn() -> I + Send + Clone + 'static,
                 Ok(HttpResponse::internal_server_error().build())
             }
         }
+    }
+
+}
+pub struct ServeHttpService<F, I, T> 
+where F: Fn() -> I + Send + Clone + 'static,
+I: IntoServiceFactory<T>,
+T: ServiceFactory 
+{
+    app: F,
+    _p: PhantomData<T>
+}
+
+impl<F, I, T> ServeHttpService<F, I, T> 
+where F: Fn() -> I + Send + Clone + 'static,
+    I: IntoServiceFactory<T>,
+    T: ServiceFactory<Request=(), Config = (), Service = AppHttpService>,
+{
+    pub fn new(app: F) -> Self {
+        ServeHttpService { app, _p: PhantomData }
+    }
+    
+    pub fn run(&mut self, listener: std::net::TcpListener) {
+        let (routes, extensions) = self.new_service().unwrap();
+       let y = Run {
+            routes,
+            extensions: Rc::new(extensions),
+            listener,
+        };
+        y.run();
+    }
+
+    // /// Starts the server and initializes all services
+    fn new_service(&mut self) ->  Result<(AHashMap<String, Rc<RefCell<ResourceService>>>, Extensions), ServerError>
+    // ServerResult<()> 
+    {
+        let app = (self.app)();
+        let app_factory = app.into_factory();
+        let app_service = app_factory.new_service(());
+        
+        let http_service: Result<AppHttpService, T::InitError> = block_on(app_service);
+        
+        match http_service {
+            Ok(service) => {
+                // self.routes = service.routes;
+                // self.extensions = Rc::new(service.extensions);
+                Ok((service.routes, service.extensions))
+            }
+            Err(_) => {
+                Err(ServerError::service_init_error(String::from("Failed to initialize app services.")))
+            }
+        }
+    }
+
+
+}
+
+pub struct HttpServer<F, I, T> 
+where F: Fn() -> I + Send + Clone + 'static,
+I: IntoServiceFactory<T>,
+T: ServiceFactory,
+{
+    app: F,
+    config: ServerConfig,
+    port: i32,
+    _p: PhantomData<T>
+}
+
+impl<F, I, T> HttpServer<F, I, T> 
+where F: Fn() -> I + Send + Clone + 'static,
+    I: IntoServiceFactory<T>,
+    T: ServiceFactory<Request=(), Config = (), Service = AppHttpService>,
+{
+    pub fn new(app: F) -> Self {
+        Self { 
+            app,
+            config: ServerConfig::default(),
+            port: 2443,
+            _p: PhantomData,
+        }
+    }
+
+    /// Configures the server with custom settings
+    pub fn with_config(mut self, config: ServerConfig) -> Self {
+        self.config = config;
+        self
+    }
+
+    pub fn bind(mut self, port: i32) -> Self {
+        self.port = port;
+        self
+    }
+    /// Runs the HTTP server and starts accepting connections
+    ///
+    /// This method blocks the current thread and runs the server indefinitely
+    ///
+    /// # Panics
+    ///
+    /// Panics if the server fails to start or service initialization fails
+    pub async fn run(&mut self) {
+        let mut servers = Vec::new();
+        for _ in 0..4 {
+            let x = self.app.clone();
+            let y = self.config.clone();
+            let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
+            socket.set_reuse_port(true).unwrap();
+            socket.bind(&format!("127.0.0.1:{}", self.port).parse::<std::net::SocketAddr>().unwrap().into()).unwrap();
+            socket.listen(128).unwrap();
+            let listener: TcpListener = socket.into();
+
+            let handle = tokio::spawn(async move {
+                let mut t =ServeHttpService::new(x);
+                t.run(listener);
+            });
+            servers.push(handle);
+        }
+            
+        // Run all servers
+        futures_util::future::join_all(servers).await;
     }
 
 }

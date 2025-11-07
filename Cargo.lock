@@ -1190,6 +1190,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slab",
+ "socket2",
  "tokio",
  "tokio-postgres",
 ]

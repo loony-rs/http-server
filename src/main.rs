@@ -52,6 +52,7 @@ async fn main() {
         .data(db.clone())
         .routes(routes)
     )
-    .run();
+    .bind(2000)
+    .run().await;
 
 }   
