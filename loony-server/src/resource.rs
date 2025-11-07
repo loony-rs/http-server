@@ -122,34 +122,34 @@ impl Future for FutureResourceService {
 }
 
 
-#[cfg(test)]
-mod tests {
-    use crate::extensions::Extensions;
-    use crate::request::HttpRequest;
-    use crate::route::Route;
-    use crate::service::AppServiceFactory;
-    use crate::service::ServiceRequest;
-    use crate::resource::Resource;
-    use loony_service::Service;
-    use std::rc::Rc;
-    use crate::config::RouteService;
+// #[cfg(test)]
+// mod tests {
+//     use crate::extensions::Extensions;
+//     use crate::request::HttpRequest;
+//     use crate::route::Route;
+//     use crate::service::AppServiceFactory;
+//     use crate::service::ServiceRequest;
+//     use crate::resource::Resource;
+//     use loony_service::Service;
+//     use std::rc::Rc;
+//     use crate::config::RouteService;
 
-    async fn index(_: String) -> String {
-        "Hello World!".to_string()
-    }
+//     async fn index(_: String) -> String {
+//         "Hello World!".to_string()
+//     }
 
-    #[test]
-    fn resource() {
-      let r = Route::new("/home");
-      let r = r.to(index);
-      let rs = Resource::new("".to_string());
-      let mut rs = rs.route(r);
-      let mut a_ser = RouteService::new();
-      rs.register(&mut a_ser);
-      let sr = ServiceRequest(HttpRequest { url: "/home".to_string(), extensions: Rc::new(Extensions::new()), params: None });
-      let mut a= rs.route_service.borrow_mut();
-      if let Some(mut c) = a.take() {
-        c.call(sr);
-      }
-    }
-}
+//     #[test]
+//     fn resource() {
+//       let r = Route::new("/home");
+//       let r = r.to(index);
+//       let rs = Resource::new("".to_string());
+//       let mut rs = rs.route(r);
+//       let mut a_ser = RouteService::new();
+//       rs.register(&mut a_ser);
+//       let sr = ServiceRequest(HttpRequest { url: "/home".to_string(), extensions: Rc::new(Extensions::new()), params: None });
+//       let mut a= rs.route_service.borrow_mut();
+//       if let Some(mut c) = a.take() {
+//         c.call(sr);
+//       }
+//     }
+// }

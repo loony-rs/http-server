@@ -2,7 +2,7 @@ use crate::{builder::Builder, connection::Connection, error::*};
 use ahash::AHashMap;
 use async_std::task::block_on;
 use loony_service::{IntoServiceFactory, Service, ServiceFactory};
-use crate::{App, app_service::AppHttpService, extensions::Extensions, request::{EMPTY_HEADER, HttpRequest, Request}, resource::ResourceService, service::ServiceRequest};
+use crate::{App, app_service::AppHttpService, extensions::Extensions, request::{EMPTY_HEADER, HttpRequest as Request}, resource::ResourceService, service::ServiceRequest};
 use std::{cell::RefCell, marker::PhantomData, net::TcpStream, rc::Rc, time::Duration};
 
 static RESPONSE_OK: &str = "HTTP/1.1 200 OK\r\n\r\n";
@@ -146,8 +146,8 @@ where F: Fn() -> I + Send + Clone + 'static,
 
     /// Parses raw HTTP request data into a structured Request object
     fn parse_request(&self, buffer: &[u8]) -> Result<Request, ServerError> {
-        let mut headers = [EMPTY_HEADER; 16];
-        let mut request = Request::new(&mut headers);
+        // let mut headers = [EMPTY_HEADER; 16];
+        let mut request = Request::new();
         request.parse(buffer);
         Ok(request.into())
     }
@@ -159,11 +159,9 @@ where F: Fn() -> I + Send + Clone + 'static,
     ) -> Result<String, ServerError> {
         let path = request.uri.as_ref()
             .ok_or(HandlerError::MissingUri)?;
-
-        let (path, query_params) = self.parse_uri(path);
         
-        if let Some(service) = self.routes.get(&path) {
-            self.execute_service(service.clone(), request, query_params)
+        if let Some(service) = self.routes.get(&request.uri.clone().unwrap()) {
+            self.execute_service(service.clone(), request)
         } else {
             Ok(RESPONSE_NOT_FOUND.to_string())
         }
@@ -184,14 +182,12 @@ where F: Fn() -> I + Send + Clone + 'static,
     fn execute_service(
         &self,
         service: Rc<RefCell<ResourceService>>,
-        request: Request,
-        query_params: Vec<String>
+        request: Request
     ) -> Result<String, ServerError> {
-        let service_request = ServiceRequest(HttpRequest {
-            url: String::from(request.uri.unwrap()),
+        let service_request = ServiceRequest {
+            req: request,
             extensions: self.extensions.clone(),
-            params: Some(query_params),
-        });
+        };
 
         let mut service_clone = Rc::clone(&service);
         let future = service_clone.call(service_request);

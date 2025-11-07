@@ -31,7 +31,7 @@ impl FromRequest for String {
     type Future = Ready<Result<String, ()>>;
 
     fn from_request(req: &ServiceRequest) -> Self::Future {
-        ready(Ok(req.0.url.clone()))
+        ready(Ok(req.req.uri.clone().unwrap()))
     }
 }
 
@@ -55,7 +55,7 @@ where
 {
     type Future = Ready<Result<Data<T>, ()>>;
     fn from_request(req: &ServiceRequest) -> Self::Future {
-        let a = req.0.extensions.get::<T>().unwrap();
+        let a = req.extensions.get::<T>().unwrap();
         ready(Ok(Data(a.clone())))
     }
 }
@@ -66,7 +66,7 @@ where
 {
     type Future = Ready<Result<(Data<T>, ), ()>>;
     fn from_request(req: &ServiceRequest) -> Self::Future {
-        let a = req.0.extensions.get::<T>().unwrap();
+        let a = req.extensions.get::<T>().unwrap();
         ready(Ok((Data(a.clone()), )))
     }
 }
@@ -77,11 +77,11 @@ where
 {
     type Future = Ready<Result<(Data<T>, String,), ()>>;
     fn from_request(req: &ServiceRequest) -> Self::Future {
-        let a = req.0.extensions.get::<T>().unwrap();
-        let b = &req.0.params;
+        let a = req.extensions.get::<T>().unwrap();
+        let b = &req.req.params;
         if let Some(b) = b {
             if b.len() == 1  {
-                return ready(Ok((Data(a.clone()), b[0].clone(),)));
+                return ready(Ok((Data(a.clone()), b.clone(),)));
             }
         }
 
