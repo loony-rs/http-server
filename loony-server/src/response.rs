@@ -28,6 +28,49 @@ impl Display for HttpVersion {
     }
 }
 
+// Helper trait for easy status code creation
+pub trait IntoStatusCode {
+    fn into_status_code(self) -> StatusCode;
+}
+
+impl IntoStatusCode for StatusCode {
+    fn into_status_code(self) -> StatusCode {
+        self
+    }
+}
+
+impl IntoStatusCode for u16 {
+    fn into_status_code(self) -> StatusCode {
+        StatusCode::from_u16(self).unwrap_or(StatusCode::InternalServerError)
+    }
+}
+
+impl StatusCode {
+    // Common success methods
+    pub fn ok() -> Self { StatusCode::Ok }
+    pub fn created() -> Self { StatusCode::Created }
+    pub fn no_content() -> Self { StatusCode::NoContent }
+    
+    // Common client error methods
+    pub fn bad_request() -> Self { StatusCode::BadRequest }
+    pub fn unauthorized() -> Self { StatusCode::Unauthorized }
+    pub fn forbidden() -> Self { StatusCode::Forbidden }
+    pub fn not_found() -> Self { StatusCode::NotFound }
+    pub fn method_not_allowed() -> Self { StatusCode::MethodNotAllowed }
+    
+    // Common server error methods
+    pub fn internal_server_error() -> Self { StatusCode::InternalServerError }
+    pub fn not_implemented() -> Self { StatusCode::NotImplemented }
+    pub fn bad_gateway() -> Self { StatusCode::BadGateway }
+    pub fn service_unavailable() -> Self { StatusCode::ServiceUnavailable }
+    
+    // Redirection methods
+    pub fn moved_permanently() -> Self { StatusCode::MovedPermanently }
+    pub fn found() -> Self { StatusCode::Found }
+    pub fn temporary_redirect() -> Self { StatusCode::TemporaryRedirect }
+    pub fn permanent_redirect() -> Self { StatusCode::PermanentRedirect }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatusCode {
     // 1xx Informational
@@ -179,6 +222,7 @@ impl StatusCode {
             StatusCode::NotExtended => "Not Extended",
             StatusCode::NetworkAuthenticationRequired => "Network Authentication Required",
         }
+        
     }
 
     /// Check if the status code is informational (1xx)

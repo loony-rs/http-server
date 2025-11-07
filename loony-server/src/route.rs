@@ -312,29 +312,36 @@ pub async fn default() -> String {
     "".to_string()
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use futures::{FutureExt, executor::block_on};
-//     use crate::request::HttpRequest;
-//     use super::*;
+#[cfg(test)]
+mod tests {
+    use futures::executor::block_on;
+    use crate::extensions::Extensions;
+    use crate::request::HttpRequest;
+    use std::rc::Rc;
+    use super::*;
 
-//     async fn index(_: String) -> String {
-//         "Hello World!".to_string()
-//     }
+    async fn index(_: String) -> String {
+        "Hello World!".to_string()
+    }
 
-//     #[test]
-//     fn route() {
-//         let sr = ServiceRequest(HttpRequest { url: "/home".to_string(), extensions: &Extensions::new() });
-//         let r = Route::new("/home");
-//         let r = r.route(index);
-//         let a = r.new_service(());
-//         let mut b = block_on(a).unwrap();
-//         let c = b.call(sr);
-//         let d = block_on(c).unwrap();
-//         let e = d.0.value;
-//         assert_eq!("Hello World!".to_string(), e);
-//     }
-// }
+    #[test]
+    fn route() {
+        let ext = Extensions::new();
+        let req = HttpRequest::new();
+        let sr = ServiceRequest {
+            req,
+            extensions: Rc::new(ext),
+        };
+        let r = Route::new("/home");
+        let r = r.to(index);
+        let a = r.new_service(());
+        let mut b = block_on(a).unwrap();
+        let c = b.call(sr);
+        let d = block_on(c).unwrap();
+        let e = d.0;
+        assert_eq!("Hello World!".to_string(), e);
+    }
+}
 
 // struct RouteHandlerService<T: Service> {
 //     factory:T 

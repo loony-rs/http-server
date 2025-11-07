@@ -17,7 +17,7 @@ pub struct HttpRequest {
     pub uri: Option<String>,
     pub version: Option<u8>,
     pub headers: Vec<(String, String)>,
-    pub params: Rc<Vec<String>>
+    pub params: Rc<Vec<String>>,
 }
 
 impl HttpRequest {
@@ -35,7 +35,7 @@ impl HttpRequest {
         // Create a headers array with a fixed size (common practice is 16-64)
         let mut headers = [httparse::EMPTY_HEADER; 16];
         let mut req = Request::new(&mut headers);
-        
+            
         // Parse the request
         match req.parse(buffer) {
             Ok(Status::Complete(parsed_len)) => {

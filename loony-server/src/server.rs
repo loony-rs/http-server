@@ -1,15 +1,12 @@
-use crate::{builder::Builder, connection::Connection, error::*};
+use crate::{builder::Builder, connection::Connection, error::*, response::HttpResponse};
 use ahash::AHashMap;
 use async_std::task::block_on;
 use loony_service::{IntoServiceFactory, Service, ServiceFactory};
-use crate::{App, app_service::AppHttpService, extensions::Extensions, request::{EMPTY_HEADER, HttpRequest as Request}, resource::ResourceService, service::ServiceRequest};
+use crate::{app_service::AppHttpService, extensions::Extensions, request::HttpRequest, resource::ResourceService, service::ServiceRequest};
 use std::{cell::RefCell, marker::PhantomData, net::TcpStream, rc::Rc, time::Duration};
 
-static RESPONSE_OK: &str = "HTTP/1.1 200 OK\r\n\r\n";
-static RESPONSE_NOT_FOUND: &str = "HTTP/1.1 401 NOT FOUND\r\n\r\nNOT FOUND";
-static RESPONSE_INTERNAL_ERROR: &str = "HTTP/1.1 500 INTERNAL SERVER ERROR\r\n\r\nNOT FOUND";
+// pub type AppInstance = Box<dyn Fn() -> App + 'static>;
 
-pub type AppInstance = Box<dyn Fn() -> App + 'static>;
 pub struct HttpServer<F, I, T> 
 where F: Fn() -> I + Send + Clone + 'static,
 I: IntoServiceFactory<T>,
@@ -40,20 +37,12 @@ where F: Fn() -> I + Send + Clone + 'static,
     }
 
     /// Configures the server with custom settings
-    ///
-    /// # Arguments
-    ///
-    /// * `config` - Server configuration
     pub fn with_config(mut self, config: ServerConfig) -> Self {
         self.config = config;
         self
     }
 
     /// Starts the server and initializes all services
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if service initialization fails
     fn initialize_services(&mut self) ->  ServerResult<()> {
         let app = (self.app)();
         let app_factory = app.into_factory();
@@ -67,32 +56,11 @@ where F: Fn() -> I + Send + Clone + 'static,
                 self.extensions = Rc::new(service.extensions);
                 Ok(())
             }
-            Err(e) => {
-                // eprintln!("Failed to initialize HTTP service: {:?}", e);
-                Err(ServerError::service_init_error(String::from("")))
-                // Err(String::from(""))
+            Err(_) => {
+                Err(ServerError::service_init_error(String::from("Failed to initialize app services.")))
             }
         }
     }
-
-    fn start(&mut self) {
-        let app = (self.app)();
-        let app_factory = app.into_factory();
-        let app_service = app_factory.new_service(());
-        let http_service:Result<AppHttpService, <T as ServiceFactory>::InitError> = block_on(app_service);
-        if let Ok(http_service) = http_service {
-            let exts = http_service.extensions;
-            self.routes = http_service.routes;
-            self.extensions = Rc::new(exts);
-        };
-    }
-
-    // pub fn run(&mut self) {
-    //     self.start();
-    //     let a = self.builder.run();
-    //     println!("Http Server is running on Port: 3005");
-    //     self.accept(a);
-    // }
 
     /// Runs the HTTP server and starts accepting connections
     ///
@@ -102,7 +70,6 @@ where F: Fn() -> I + Send + Clone + 'static,
     ///
     /// Panics if the server fails to start or service initialization fails
     pub fn run(&mut self) {
-        log::info!("Starting HTTP server...");
         
         if let Err(e) = self.initialize_services() {
             panic!("Failed to start server: {}", e);
@@ -145,9 +112,9 @@ where F: Fn() -> I + Send + Clone + 'static,
 
 
     /// Parses raw HTTP request data into a structured Request object
-    fn parse_request(&self, buffer: &[u8]) -> Result<Request, ServerError> {
+    fn parse_request(&self, buffer: &[u8]) -> Result<HttpRequest, ServerError> {
         // let mut headers = [EMPTY_HEADER; 16];
-        let mut request = Request::new();
+        let mut request = HttpRequest::new();
         let _ = request.parse(buffer).unwrap();
         Ok(request.into())
     }
@@ -155,15 +122,15 @@ where F: Fn() -> I + Send + Clone + 'static,
     /// Handles an HTTP request and generates an appropriate response
     fn handle_request(
         &self,
-        request: Request,
+        request: HttpRequest,
     ) -> Result<String, ServerError> {
         let path = request.uri.as_ref()
             .ok_or(HandlerError::MissingUri)?;
         
-        if let Some(service) = self.routes.get(&request.uri.clone().unwrap()) {
+        if let Some(service) = self.routes.get(path) {
             self.execute_service(service.clone(), request)
         } else {
-            Ok(RESPONSE_NOT_FOUND.to_string())
+            Ok(HttpResponse::bad_request().build())
         }
     }
 
@@ -171,7 +138,7 @@ where F: Fn() -> I + Send + Clone + 'static,
     fn execute_service(
         &self,
         service: Rc<RefCell<ResourceService>>,
-        request: Request
+        request: HttpRequest
     ) -> Result<String, ServerError> {
         let service_request = ServiceRequest {
             req: request,
@@ -185,9 +152,8 @@ where F: Fn() -> I + Send + Clone + 'static,
             Ok(response) => {
                 Ok(response.0)
             }
-            Err(e) => {
-                log::error!("Service execution error: {:?}", e);
-                Ok(RESPONSE_INTERNAL_ERROR.to_string())
+            Err(_) => {
+                Ok(HttpResponse::internal_server_error().build())
             }
         }
     }
