@@ -78,14 +78,8 @@ where
     type Future = Ready<Result<(Data<T>, String,), ()>>;
     fn from_request(req: &ServiceRequest) -> Self::Future {
         let a = req.extensions.get::<T>().unwrap();
-        let b = &req.req.params;
-        if let Some(b) = b {
-            if b.len() == 1  {
-                return ready(Ok((Data(a.clone()), b.clone(),)));
-            }
-        }
-
-        ready(Ok((Data(a.clone()), "".to_string(),)))
+        // let b = &req.req.params;
+        return ready(Ok((Data(a.clone()), "".to_string(),)));
     }
 }
 

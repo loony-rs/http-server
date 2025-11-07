@@ -148,7 +148,7 @@ where F: Fn() -> I + Send + Clone + 'static,
     fn parse_request(&self, buffer: &[u8]) -> Result<Request, ServerError> {
         // let mut headers = [EMPTY_HEADER; 16];
         let mut request = Request::new();
-        request.parse(buffer);
+        let _ = request.parse(buffer).unwrap();
         Ok(request.into())
     }
 
@@ -167,17 +167,6 @@ where F: Fn() -> I + Send + Clone + 'static,
         }
     }
 
-    /// Parses URI into path and query parameters
-    fn parse_uri(&self, uri: &str) -> (String, Vec<String>) {
-        let parts: Vec<&str> = uri.split('?').collect();
-        let path = parts.first().map(|&p| p.to_string()).unwrap_or_default();
-        let query_params = parts.get(1)
-            .map(|&q| q.split('&').map(String::from).collect())
-            .unwrap_or_default();
-        
-        (path, query_params)
-    }
-
      /// Executes the appropriate service for the request
     fn execute_service(
         &self,
@@ -194,9 +183,7 @@ where F: Fn() -> I + Send + Clone + 'static,
         
         match block_on(future) {
             Ok(response) => {
-                let mut http_response = String::from(RESPONSE_OK);
-                http_response.push_str(&response.0.value);
-                Ok(http_response)
+                Ok(response.0)
             }
             Err(e) => {
                 log::error!("Service execution error: {:?}", e);

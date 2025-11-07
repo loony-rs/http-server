@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use httparse::{Request, Status};
 
 pub const EMPTY_HEADER: Header<'static> = Header { name: "", value: b"" };
@@ -15,7 +17,7 @@ pub struct HttpRequest {
     pub uri: Option<String>,
     pub version: Option<u8>,
     pub headers: Vec<(String, String)>,
-    pub params: Option<String>
+    pub params: Rc<Vec<String>>
 }
 
 impl HttpRequest {
@@ -25,7 +27,7 @@ impl HttpRequest {
             uri: None,
             version: None,
             headers: Vec::new(),
-            params: None
+            params: Rc::new(Vec::new())
         }
     }
 
@@ -44,7 +46,9 @@ impl HttpRequest {
                 
                 // Store URI
                 if let Some(path) = req.path {
+                    let (_, params) = parse_uri(&path);
                     self.uri = Some(path.to_string());
+                    self.params = Rc::new(params);
                 }
                 
                 // Store version
@@ -60,6 +64,7 @@ impl HttpRequest {
                     self.headers.push((name, value));
                 }
                 
+
                 Ok(parsed_len)
             }
             Ok(Status::Partial) => {
@@ -78,4 +83,16 @@ impl Default for HttpRequest {
     fn default() -> Self {
         Self::new()
     }
+}
+
+
+/// Parses URI into path and query parameters
+fn parse_uri(uri: &str) -> (String, Vec<String>) {
+    let parts: Vec<&str> = uri.split('?').collect();
+    let path = parts.first().map(|&p| p.to_string()).unwrap_or_default();
+    let query_params = parts.get(1)
+        .map(|&q| q.split('&').map(String::from).collect())
+        .unwrap_or_default();
+
+    (path, query_params)
 }

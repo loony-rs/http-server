@@ -21,9 +21,11 @@ pub struct ServiceRequest{
     pub extensions: Rc<Extensions>
 }
 
-#[derive(Clone)]
-pub struct ServiceResponse(pub HttpResponse);
+// #[derive(Clone)]
+// pub struct ServiceResponse(pub HttpResponse);
 
+#[derive(Clone)]
+pub struct ServiceResponse(pub String);
 
 pub(crate) struct ServiceFactoryWrapper<T> {
     factory: Option<T>,
