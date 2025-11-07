@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{config::RouteService, extensions::Extensions, request::HttpRequest, response::HttpResponse};
+use crate::{config::RouteService, extensions::Extensions, request::HttpRequest};
 
 pub trait HttpServiceFactory {
     fn register(self,  config: &mut RouteService);

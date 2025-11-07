@@ -7,8 +7,6 @@ use std::{cell::RefCell, marker::PhantomData, net::TcpStream, rc::Rc, time::Dura
 use socket2::{Socket, Domain, Type};
 use std::net::TcpListener;
 
-// pub type AppInstance = Box<dyn Fn() -> App + 'static>;
-
 pub struct Run {
     routes: AHashMap<String, Rc<RefCell<ResourceService>>>,
     extensions: Rc<Extensions>,
@@ -18,8 +16,7 @@ pub struct Run {
 impl Run {
     fn run(&self) {
         loop {
-            let (stream, _) = self.listener.accept().unwrap();
-            // let response_builder = Response::new(&self.routes, self.extensions.clone());            
+            let (stream, _) = self.listener.accept().unwrap();            
             self.handle_connection(stream).unwrap();
         }
     }
@@ -29,37 +26,25 @@ impl Run {
         &self, 
         stream: TcpStream,
     ) -> Result<(), ServerError> {
-        let mut connection = Connection::new(stream);
-        let mut buffer = [0; 1024];
-        
-        // Read request
-        let bytes_read = connection.read(&mut buffer)?;
-        if bytes_read == 0 {
-            return Ok(()); // Empty request, skip processing
-        }
-
-        // Parse request
-        let request = self.parse_request(&buffer[..bytes_read])?;
-        
-        // Handle request and send response
-        let response = self.handle_request(request)?;
-        connection.write(&response);
-        
-        connection.close();
+        let mut connection = Connection::new(stream)?;
+        let bytes_read = connection.read_http_response()?;
+        let request = self.request(&bytes_read)?;
+        let response = self.response(request)?;
+        connection.write_str(&response)?;
+        connection.close()?;
         Ok(())
     }
 
 
     /// Parses raw HTTP request data into a structured Request object
-    fn parse_request(&self, buffer: &[u8]) -> Result<HttpRequest, ServerError> {
-        // let mut headers = [EMPTY_HEADER; 16];
+    fn request(&self, buffer: &[u8]) -> Result<HttpRequest, ServerError> {
         let mut request = HttpRequest::new();
         let _ = request.parse(buffer).unwrap();
         Ok(request.into())
     }
 
     /// Handles an HTTP request and generates an appropriate response
-    fn handle_request(
+    fn response(
         &self,
         request: HttpRequest,
     ) -> Result<String, ServerError> {
@@ -128,7 +113,6 @@ where F: Fn() -> I + Send + Clone + 'static,
 
     // /// Starts the server and initializes all services
     fn new_service(&mut self) ->  Result<(AHashMap<String, Rc<RefCell<ResourceService>>>, Extensions), ServerError>
-    // ServerResult<()> 
     {
         let app = (self.app)();
         let app_factory = app.into_factory();
@@ -138,8 +122,6 @@ where F: Fn() -> I + Send + Clone + 'static,
         
         match http_service {
             Ok(service) => {
-                // self.routes = service.routes;
-                // self.extensions = Rc::new(service.extensions);
                 Ok((service.routes, service.extensions))
             }
             Err(_) => {
@@ -197,7 +179,7 @@ where F: Fn() -> I + Send + Clone + 'static,
         let mut servers = Vec::new();
         for _ in 0..4 {
             let x = self.app.clone();
-            let y = self.config.clone();
+            let _ = self.config.clone();
             let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
             socket.set_reuse_port(true).unwrap();
             socket.bind(&format!("127.0.0.1:{}", self.port).parse::<std::net::SocketAddr>().unwrap().into()).unwrap();

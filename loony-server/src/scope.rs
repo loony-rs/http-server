@@ -43,6 +43,6 @@ impl HttpServiceFactory for Scope {
     }
 }
 
-pub struct ScopeFactory {
-    services: Vec<ResourceService>
-}
+// pub struct ScopeFactory {
+//     services: Vec<ResourceService>
+// }
