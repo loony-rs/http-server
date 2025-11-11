@@ -114,7 +114,6 @@ impl<'route> Route {
 
 pub struct RouteService {
     service: BoxedRouteService,
-    method: Method,
 }
 
 pub struct RouteServices {
@@ -159,7 +158,7 @@ impl ServiceFactory for Route {
 
     fn new_service(&self, _: ()) -> Self::Future {
         let fut = self.service.new_service(());
-        RouteFutureService { fut, method: self.method.clone() }
+        RouteFutureService { fut }
     }
 }
 
@@ -167,7 +166,6 @@ impl ServiceFactory for Route {
 pub struct RouteFutureService {
     #[pin]
     pub fut: BoxService,
-    pub method: Method,
 }
 
 impl Future for RouteFutureService {
@@ -178,8 +176,7 @@ impl Future for RouteFutureService {
 
         match this.fut.poll(cx)? {
             Poll::Ready(service) => Poll::Ready(Ok(RouteService {
-                service,
-                method: this.method.clone(),
+                service
             })),
             Poll::Pending => Poll::Pending,
         }

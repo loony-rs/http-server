@@ -1,7 +1,5 @@
 use std::{
-  pin::Pin, 
-  rc::Rc,
-  cell::RefCell,
+  pin::Pin,
   task::{Context, Poll},
 };
 
@@ -23,7 +21,6 @@ use loony_service::{ServiceFactory, Service};
 pub struct Resource {
   scope: String,
   route: Route,
-  route_service: Rc<RefCell<Option<FinalRouteService>>>
 }
 
 impl Resource {
@@ -31,7 +28,6 @@ impl Resource {
     Resource {
       scope,
       route: Route::new(""),
-      route_service: Rc::new(RefCell::new(None)),
     }
   }
 
@@ -52,20 +48,10 @@ impl ServiceFactory for Resource {
  
     fn new_service(&self, _: ()) -> Self::Future {
         let mut route_name = self.scope.clone();
-        let a: Vec<&str> = self.route.path.split("::").collect();
-        let mut b = a.iter();
-        if let Some(data) = b.next() {
-          route_name.push_str(data);
-        }
-        let mut route_query_param = String::new();
-        if let Some(data) = b.next() {
-          route_query_param.push_str(data);
-        }
+        route_name.push_str(&self.route.path);
         let fut = self.route.new_service(());
         FinalFutureRouteService {
-          len: route_name.len() as u16,
           route_name,
-          route_query_param,
           fut,
         }
     }
@@ -84,14 +70,10 @@ pub struct FinalFutureRouteService {
     #[pin]
     pub fut: RouteFutureService,
     pub route_name: String,
-    pub route_query_param: String,
-    pub len: u16,
 }
 pub struct FinalRouteService {
     pub service: BoxedRouteService,
     pub route_name: String,
-    pub route_query_param: String,
-    pub len: u16,
 }
 
 impl Service for FinalRouteService {
@@ -113,8 +95,6 @@ impl Future for FinalFutureRouteService {
             let a = Poll::Ready(Ok(FinalRouteService {
                 service: service.unwrap(),
                 route_name: self.route_name.clone(),
-                route_query_param: self.route_query_param.clone(),
-                len: self.len,
             }));
             return a;
           },
@@ -151,9 +131,9 @@ mod tests {
       let req = HttpRequest::new();
       let ext = Extensions::new();
       let sr = ServiceRequest { req, extensions:Rc::new(ext) };
-      let mut a= rs.route_service.borrow_mut();
-      if let Some(mut c) = a.take() {
-        c.call(sr);
-      }
+      // let mut a= rs.route_service.borrow_mut();
+      // if let Some(mut c) = a.take() {
+      //   c.call(sr);
+      // }
     }
 }

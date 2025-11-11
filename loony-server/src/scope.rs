@@ -42,7 +42,3 @@ impl HttpServiceFactory for Scope {
         self.services.into_iter().for_each(|mut f| f.register(config));
     }
 }
-
-// pub struct ScopeFactory {
-//     services: Vec<ResourceService>
-// }
