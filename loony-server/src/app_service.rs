@@ -5,7 +5,7 @@ use futures::future::ready;
 use futures::{future::Ready};
 use crate::route::RouteServices;
 use crate::extensions::Extensions;
-use crate::resource::ResourceService;
+use crate::resource::FinalRouteService;
 use crate::service::{AppServiceFactory};
 use loony_service::{ServiceFactory, Service};
 
@@ -57,7 +57,7 @@ impl ServiceFactory for AppFactory {
 }
  
 pub struct AppHttpService {
-    pub(crate) routes: AHashMap<String, Rc<RefCell<ResourceService>>>,
+    pub(crate) routes: AHashMap<String, Rc<RefCell<FinalRouteService>>>,
     pub(crate) extensions: Extensions,
 }
 

@@ -8,7 +8,7 @@ use loony_service::{
 use crate::{
     extract::{Extract, FromRequest}, 
     handler::{Factory, Handler}, 
-    resource::{Resource, ResourceService}, responder::Responder, scope::Scope, service::{AppServiceFactory, HttpServiceFactory, ServiceFactoryWrapper, ServiceRequest, ServiceResponse}
+    resource::{Resource, FinalRouteService}, responder::Responder, scope::Scope, service::{AppServiceFactory, HttpServiceFactory, ServiceFactoryWrapper, ServiceRequest, ServiceResponse}
 };
 
 #[derive(Clone)]
@@ -118,7 +118,7 @@ pub struct RouteService {
 }
 
 pub struct RouteServices {
-  pub services: Vec<Rc<RefCell<ResourceService>>>
+  pub services: Vec<Rc<RefCell<FinalRouteService>>>
 }
 
 impl RouteServices {
@@ -128,11 +128,11 @@ impl RouteServices {
     }
   }
 
-  pub fn service(&mut self, service: ResourceService) {
+  pub fn service(&mut self, service: FinalRouteService) {
     self.services.push(Rc::new(RefCell::new(service)));
   }
 
-  pub fn into_services(self) -> Vec<Rc<RefCell<ResourceService>>> {
+  pub fn into_services(self) -> Vec<Rc<RefCell<FinalRouteService>>> {
     self.services
   }
 }

@@ -23,7 +23,7 @@ use loony_service::{ServiceFactory, Service};
 pub struct Resource {
   scope: String,
   route: Route,
-  route_service: Rc<RefCell<Option<ResourceService>>>
+  route_service: Rc<RefCell<Option<FinalRouteService>>>
 }
 
 impl Resource {
@@ -45,8 +45,8 @@ impl ServiceFactory for Resource {
     type Request = ServiceRequest;
     type Response = ServiceResponse;
     type Error = ();
-    type Service = ResourceService;
-    type Future = FutureResourceService;
+    type Service = FinalRouteService;
+    type Future = FinalFutureRouteService;
     type InitError = ();
     type Config = ();
  
@@ -62,7 +62,7 @@ impl ServiceFactory for Resource {
           route_query_param.push_str(data);
         }
         let fut = self.route.new_service(());
-        FutureResourceService {
+        FinalFutureRouteService {
           len: route_name.len() as u16,
           route_name,
           route_query_param,
@@ -80,21 +80,21 @@ impl AppServiceFactory for Resource {
 }
 
 #[pin_project::pin_project]
-pub struct FutureResourceService {
+pub struct FinalFutureRouteService {
     #[pin]
     pub fut: RouteFutureService,
     pub route_name: String,
     pub route_query_param: String,
     pub len: u16,
 }
-pub struct ResourceService {
+pub struct FinalRouteService {
     pub service: BoxedRouteService,
     pub route_name: String,
     pub route_query_param: String,
     pub len: u16,
 }
 
-impl Service for ResourceService {
+impl Service for FinalRouteService {
     type Request = ServiceRequest;
     type Response = ServiceResponse;
     type Error = ();
@@ -105,12 +105,12 @@ impl Service for ResourceService {
     }
 }
 
-impl Future for FutureResourceService {
-    type Output = Result<ResourceService, ()>;
+impl Future for FinalFutureRouteService {
+    type Output = Result<FinalRouteService, ()>;
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.fut.fut.as_mut().poll(cx) {
           Poll::Ready(service) => {
-            let a = Poll::Ready(Ok(ResourceService {
+            let a = Poll::Ready(Ok(FinalRouteService {
                 service: service.unwrap(),
                 route_name: self.route_name.clone(),
                 route_query_param: self.route_query_param.clone(),

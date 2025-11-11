@@ -2,13 +2,13 @@ use crate::{connection::Connection, error::*, response::HttpResponse};
 use ahash::AHashMap;
 use async_std::task::block_on;
 use loony_service::{IntoServiceFactory, Service, ServiceFactory};
-use crate::{app_service::AppHttpService, extensions::Extensions, request::HttpRequest, resource::ResourceService, service::ServiceRequest};
+use crate::{app_service::AppHttpService, extensions::Extensions, request::HttpRequest, resource::FinalRouteService, service::ServiceRequest};
 use std::{cell::RefCell, marker::PhantomData, net::TcpStream, rc::Rc, time::Duration};
 use socket2::{Socket, Domain, Type};
 use std::net::TcpListener;
 
 pub struct Run {
-    routes: AHashMap<String, Rc<RefCell<ResourceService>>>,
+    routes: AHashMap<String, Rc<RefCell<FinalRouteService>>>,
     extensions: Rc<Extensions>,
     listener: std::net::TcpListener,
 }
@@ -61,7 +61,7 @@ impl Run {
      /// Executes the appropriate service for the request
     fn execute_service(
         &self,
-        service: Rc<RefCell<ResourceService>>,
+        service: Rc<RefCell<FinalRouteService>>,
         request: HttpRequest
     ) -> Result<String, ServerError> {
         let service_request = ServiceRequest {
@@ -112,7 +112,7 @@ where F: Fn() -> I + Send + Clone + 'static,
     }
 
     // /// Starts the server and initializes all services
-    fn new_service(&mut self) ->  Result<(AHashMap<String, Rc<RefCell<ResourceService>>>, Extensions), ServerError>
+    fn new_service(&mut self) ->  Result<(AHashMap<String, Rc<RefCell<FinalRouteService>>>, Extensions), ServerError>
     {
         let app = (self.app)();
         let app_factory = app.into_factory();

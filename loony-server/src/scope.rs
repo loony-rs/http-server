@@ -2,7 +2,7 @@ use loony_service::{ServiceFactory};
 use crate::{
     route::Route, 
     route::RouteServices, 
-    resource::{Resource, ResourceService, FutureResourceService}, 
+    resource::{Resource, FinalRouteService, FinalFutureRouteService}, 
     service::{AppServiceFactory, HttpServiceFactory, ServiceRequest, ServiceResponse}
 };
 
@@ -11,10 +11,10 @@ pub type BoxedResourceServiceFactory = Box<
         Request = ServiceRequest, 
         Response = ServiceResponse, 
         Error = (), 
-        Service = ResourceService,
+        Service = FinalRouteService,
         Config=(),
         InitError=(),
-        Future = FutureResourceService
+        Future = FinalFutureRouteService
     >
 >;
 

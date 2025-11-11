@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::{
-  resource::ResourceService, 
+  resource::FinalRouteService, 
   service::{AppServiceFactory, HttpServiceFactory, ServiceFactoryWrapper}
 };
 
