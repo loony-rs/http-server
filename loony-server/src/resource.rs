@@ -5,7 +5,9 @@ use std::{
   task::{Context, Poll},
 };
 
-use crate::{config::RouteService, route::{
+use crate::{
+  route::RouteServices, 
+  route::{
     BoxedRouteService, 
     Route, 
     RouteFutureService
@@ -70,7 +72,7 @@ impl ServiceFactory for Resource {
 }
 
 impl AppServiceFactory for Resource {
-  fn register(&mut self, config: &mut RouteService) {
+  fn register(&mut self, config: &mut RouteServices) {
     let a = self.new_service(());
     let b = block_on(a).unwrap();
     config.service(b);
@@ -132,7 +134,7 @@ mod tests {
     use crate::resource::Resource;
     use loony_service::Service;
     use std::rc::Rc;
-    use crate::config::RouteService;
+    use crate::route::RouteServices;
 
     async fn index(_: String) -> String {
         "Hello World!".to_string()
@@ -144,7 +146,7 @@ mod tests {
       let r = r.to(index);
       let rs = Resource::new("".to_string());
       let mut rs = rs.route(r);
-      let mut a_ser = RouteService::new();
+      let mut a_ser = RouteServices::new();
       rs.register(&mut a_ser);
       let req = HttpRequest::new();
       let ext = Extensions::new();

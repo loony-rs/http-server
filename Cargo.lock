@@ -1178,24 +1178,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "http-server"
-version = "0.0.1"
-dependencies = [
- "deadpool-postgres",
- "derive_more",
- "futures",
- "log 0.4.28",
- "loony-server",
- "loony-service",
- "serde",
- "serde_json",
- "slab",
- "socket2",
- "tokio",
- "tokio-postgres",
-]
-
-[[package]]
 name = "httparse"
 version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1389,6 +1371,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
 dependencies = [
  "value-bag",
+]
+
+[[package]]
+name = "loony-http-server"
+version = "0.0.1"
+dependencies = [
+ "deadpool-postgres",
+ "derive_more",
+ "futures",
+ "log 0.4.28",
+ "loony-server",
+ "loony-service",
+ "serde",
+ "serde_json",
+ "slab",
+ "socket2",
+ "tokio",
+ "tokio-postgres",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
 use std::{
-    future::Future, pin::Pin, task::{Context, Poll}
+    cell::RefCell, future::Future, pin::Pin, rc::Rc, task::{Context, Poll}
 };
 use loony_service::{
     Service,
@@ -8,7 +8,7 @@ use loony_service::{
 use crate::{
     extract::{Extract, FromRequest}, 
     handler::{Factory, Handler}, 
-    resource::Resource, responder::Responder, scope::Scope, service::{AppServiceFactory, HttpServiceFactory, ServiceFactoryWrapper, ServiceRequest, ServiceResponse}
+    resource::{Resource, ResourceService}, responder::Responder, scope::Scope, service::{AppServiceFactory, HttpServiceFactory, ServiceFactoryWrapper, ServiceRequest, ServiceResponse}
 };
 
 #[derive(Clone)]
@@ -115,6 +115,26 @@ impl<'route> Route {
 pub struct RouteService {
     service: BoxedRouteService,
     method: Method,
+}
+
+pub struct RouteServices {
+  pub services: Vec<Rc<RefCell<ResourceService>>>
+}
+
+impl RouteServices {
+  pub fn new() -> Self {
+    RouteServices {
+      services: Vec::new(),
+    }
+  }
+
+  pub fn service(&mut self, service: ResourceService) {
+    self.services.push(Rc::new(RefCell::new(service)));
+  }
+
+  pub fn into_services(self) -> Vec<Rc<RefCell<ResourceService>>> {
+    self.services
+  }
 }
 
 impl Service for RouteService {

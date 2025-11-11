@@ -1,17 +1,17 @@
 use std::rc::Rc;
 
-use crate::{config::RouteService, extensions::Extensions, request::HttpRequest};
+use crate::{route::RouteServices, extensions::Extensions, request::HttpRequest};
 
 pub trait HttpServiceFactory {
-    fn register(self,  config: &mut RouteService);
+    fn register(self,  config: &mut RouteServices);
 }
 
 pub trait AppServiceFactory {
-    fn register(&mut self, config: &mut RouteService);
+    fn register(&mut self, config: &mut RouteServices);
 }
 
 pub trait RouteServiceFactory {
-    fn register(&mut self, config: &mut RouteService);
+    fn register(&mut self, config: &mut RouteServices);
 }
 
 
@@ -43,7 +43,7 @@ impl<T> AppServiceFactory for ServiceFactoryWrapper<T>
 where
     T: HttpServiceFactory,
 {
-    fn register(&mut self, config: &mut RouteService) {
+    fn register(&mut self, config: &mut RouteServices) {
         if let Some(item) = self.factory.take() {
             item.register(config)
         }

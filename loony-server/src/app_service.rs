@@ -1,10 +1,9 @@
 use std::rc::Rc;
 use ahash::AHashMap;
-// use crate::AppState;
 use std::cell::RefCell;
 use futures::future::ready;
 use futures::{future::Ready};
-use crate::config::RouteService;
+use crate::route::RouteServices;
 use crate::extensions::Extensions;
 use crate::resource::ResourceService;
 use crate::service::{AppServiceFactory};
@@ -32,7 +31,7 @@ impl ServiceFactory for AppFactory {
     type Future = Ready<Result<AppHttpService, ()>>;
 
     fn new_service(&self, _: Self::Config) -> Self::Future {
-        let mut config = RouteService::new();
+        let mut config = RouteServices::new();
         std::mem::take(&mut *self.services.borrow_mut())
         .into_iter()
         .for_each(|mut srv| srv.register(&mut config));

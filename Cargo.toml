@@ -1,7 +1,7 @@
 [package]
 authors = ["Sankar boro <sankar.boro@yahoo.com>"]
 edition = "2024"
-name = "http-server"
+name = "loony-http-server"
 version = "0.0.1"
 license = "MIT OR Apache-2.0"
 

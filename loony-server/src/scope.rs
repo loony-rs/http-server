@@ -1,7 +1,7 @@
 use loony_service::{ServiceFactory};
 use crate::{
     route::Route, 
-    config::RouteService, 
+    route::RouteServices, 
     resource::{Resource, ResourceService, FutureResourceService}, 
     service::{AppServiceFactory, HttpServiceFactory, ServiceRequest, ServiceResponse}
 };
@@ -38,7 +38,7 @@ impl Scope {
 }
 
 impl HttpServiceFactory for Scope {
-    fn register(self, config: &mut RouteService) {
+    fn register(self, config: &mut RouteServices) {
         self.services.into_iter().for_each(|mut f| f.register(config));
     }
 }
