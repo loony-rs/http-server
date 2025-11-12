@@ -1,16 +1,13 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::thread;
-use std::net::{TcpListener, TcpStream};
-use std::sync::mpsc::Sender;
 
 use loony_service::IntoServiceFactory;
 
 use crate::app_service::AppFactory;
 use crate::config::ServiceConfig;
 use crate::extensions::Extensions;
-use crate::resource::Resource;
-use crate::route::{Route, Router};
+use crate::route::{Route};
+use crate::router::Router;
 use crate::service::{AppServiceFactory};
 
 pub struct App {
@@ -38,7 +35,7 @@ impl App {
 
     pub fn route(mut self, route: Route) -> Self 
     {
-        self.services.push(Box::new(Resource::new("".to_string()).route(route)));
+        self.services.push(Box::new(route));
         self
     }
 
@@ -54,24 +51,12 @@ impl App {
         self.services.extend(router.services);
         self
     }
-
-    pub fn run(&self, sender: Sender<TcpStream>) {
-      thread::spawn(move || {
-        let listener = TcpListener::bind("127.0.0.1:3005").unwrap();
-        for stream in listener.incoming() {
-          let stream = stream.unwrap();
-          
-          sender.send(stream).unwrap();
-        }
-      });
-    }
 }
 
 impl IntoServiceFactory<AppFactory> for App {
     fn into_factory(self) -> AppFactory {
         AppFactory {
             services: Rc::new(RefCell::new(self.services)),
-            // app_data: self.app_data,
             extensions: RefCell::new(Some(self.extensions)),
         }
     }

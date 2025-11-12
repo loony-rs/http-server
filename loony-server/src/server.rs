@@ -178,8 +178,7 @@ where F: Fn() -> I + Send + Clone + 'static,
     pub async fn run(&mut self) {
         let mut servers = Vec::new();
         for _ in 0..4 {
-            let x = self.app.clone();
-            let _ = self.config.clone();
+            let app = self.app.clone();
             let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
             socket.set_reuse_port(true).unwrap();
             socket.bind(&format!("127.0.0.1:{}", self.port).parse::<std::net::SocketAddr>().unwrap().into()).unwrap();
@@ -187,7 +186,7 @@ where F: Fn() -> I + Send + Clone + 'static,
             let listener: TcpListener = socket.into();
 
             let handle = tokio::spawn(async move {
-                let mut t =ServeHttpService::new(x);
+                let mut t =ServeHttpService::new(app);
                 t.run(listener);
             });
             servers.push(handle);

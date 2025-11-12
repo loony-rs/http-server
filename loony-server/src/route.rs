@@ -1,6 +1,7 @@
 use std::{
     cell::RefCell, future::Future, pin::Pin, rc::Rc, task::{Context, Poll}
 };
+use async_std::task::block_on;
 use loony_service::{
     Service,
     ServiceFactory
@@ -45,32 +46,6 @@ pub type BoxService = Pin<
     >
 >;
 
-pub struct Router {
-    pub services: Vec<Box<dyn AppServiceFactory>>,
-}
-
-impl Router {
-    pub fn new() -> Self {
-        Router { 
-            services: Vec::new()
-        }
-    }
-
-    pub fn route(mut self, route: Route) -> Self {
-        self.services.push(Box::new(Resource::new("".to_string()).route(route)));
-        self
-    }
-
-
-    pub fn service<T>(mut self, factory: T) -> Self
-    where 
-      T: HttpServiceFactory + 'static
-    {
-      self.services.push(Box::new(ServiceFactoryWrapper::new(factory)));
-      self
-    }
-}
-
 // #[derive(Clone)]
 pub struct Route {
     pub path: String,
@@ -109,6 +84,14 @@ impl<'route> Route {
     pub fn method(mut self, method: Method) -> Self {
         self.method = method;
         self
+    }
+}
+
+impl AppServiceFactory for Route {
+    fn register(&mut self, config: &mut RouteServices) {
+        let x = self.service.new_service(());
+        let res = block_on(x).unwrap();
+        config.service(FinalRouteService { service: res, route_name: self.path.clone() });
     }
 }
 
@@ -343,46 +326,20 @@ mod tests {
 
     #[test]
     fn route() {
+        let route = Route::new("/home").to(index);
+        let a = route.new_service(());
+        let mut b = block_on(a).unwrap();
+
         let ext = Extensions::new();
         let req = HttpRequest::new();
         let sr = ServiceRequest {
             req,
             extensions: Rc::new(ext),
         };
-        let r = Route::new("/home");
-        let r = r.to(index);
-        let a = r.new_service(());
-        let mut b = block_on(a).unwrap();
+
         let c = b.call(sr);
         let d = block_on(c).unwrap();
         let e = d.0;
         assert_eq!("Hello World!".to_string(), e);
     }
 }
-
-// struct RouteHandlerService<T: Service> {
-//     factory:T 
-// }
-
-// impl<T> Service for RouteHandlerService<T> 
-// where
-//     T::Future: 'static,
-//     T: Service<
-//         Request = ServiceRequest,
-//         Response = ServiceResponse,
-//         Error = (),
-//     >,
-// {
-//     type Request = ServiceRequest;
-//     type Response = ServiceResponse;
-//     type Error = ();
-//     type Future = Pin<Box<dyn Future<Output=Result<ServiceResponse, ()>>>>;
-
-//     fn call(&mut self, req: Self::Request) -> Self::Future {
-//         let a = &mut self.factory;
-//         let b = block_on(a.call(req));
-//         let c = ready(b);
-//         let d = Box::pin(c);
-//         d
-//     }
-// }

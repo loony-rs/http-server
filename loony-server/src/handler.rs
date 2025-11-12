@@ -97,10 +97,8 @@ where
     type Future = HandlerServiceResponse<R, O>;
 
     fn call(&mut self, (param, req): (P, ServiceRequest)) -> Self::Future {
-        let a = &self.factory;
-        let b = a.call(param);
         HandlerServiceResponse {
-            fut: b,
+            fut: self.factory.call(param),
             fut2: None,
             req: Some(req),
         }

@@ -91,13 +91,10 @@ impl Future for FinalFutureRouteService {
     type Output = Result<FinalRouteService, ()>;
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.fut.fut.as_mut().poll(cx) {
-          Poll::Ready(service) => {
-            let a = Poll::Ready(Ok(FinalRouteService {
-                service: service.unwrap(),
-                route_name: self.route_name.clone(),
-            }));
-            return a;
-          },
+          Poll::Ready(service) => Poll::Ready(Ok(FinalRouteService {
+              service: service.unwrap(),
+              route_name: self.route_name.clone(),
+          })),
           Poll::Pending => Poll::Pending
         }
     }

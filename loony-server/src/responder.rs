@@ -1,6 +1,5 @@
 use std::{collections::HashMap, future::{Future, Ready, ready}};
 use futures::executor::block_on;
-use serde::Serialize;
 
 use crate::{response::{HttpResponse, StatusCode}, service::{ServiceRequest, ServiceResponse}};
 

@@ -2,9 +2,7 @@ mod controller;
 mod connection;
 
 use loony_server::{
-    responder::Responder, 
-    route::{self, Router}, 
-    App, HttpServer
+    App, HttpServer, responder::Responder, route, router::Router
 };
 use crate::{connection::pg_connection};
 use deadpool_postgres::Pool;
@@ -19,9 +17,9 @@ fn routes() -> Router {
     .service(
         route::scope("/user")
         .route(route::get("/all").to(controller::users))
-        .route(route::get("/get::userid").to(controller::get_user)) // expects an url of /user/get/one?userid=<somevalue>
-        .route(route::get("/delete::userid").to(controller::get_user)) // expects an url of /user/get/one?userid=<somevalue>
-        .route(route::get("/update::userid").to(controller::get_user)) // expects an url of /user/get/one?userid=<somevalue>
+        .route(route::get("/get/:user_id").to(controller::get_user))
+        .route(route::get("/delete/:user_id").to(controller::get_user))
+        .route(route::get("/update/:user_id").to(controller::get_user))
     )
 }
 
