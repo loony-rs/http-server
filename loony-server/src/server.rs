@@ -48,10 +48,12 @@ impl Run {
         &self,
         request: HttpRequest,
     ) -> Result<String, ServerError> {
+        // :TODO
         let path = request.uri.as_ref()
             .ok_or(HandlerError::MissingUri)?;
-        
-        if let Some(service) = self.routes.get(path) {
+        let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty() || !s.contains(":")).collect();
+        let uri = segments[0..3].join("");
+        if let Some(service) = self.routes.get(&uri) {
             self.execute_service(service.clone(), request)
         } else {
             Ok(HttpResponse::bad_request().build())

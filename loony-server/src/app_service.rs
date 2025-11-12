@@ -38,7 +38,11 @@ impl ServiceFactory for AppFactory {
         let route_services = route_services.into_services();
         let mut routes = AHashMap::new();
         route_services.iter().for_each(|f| {
-            routes.insert(f.borrow().route_name.clone(), Rc::clone(f));
+            let route = f.borrow().route_name.clone();
+            let segments: Vec<&str> = route.split('/').filter(|s| !s.is_empty())
+            .filter(|s| !s.contains(":")).collect();
+            let uri = segments.join("");
+            routes.insert(uri, Rc::clone(f));
         });
         let extensions = self
             .extensions

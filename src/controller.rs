@@ -5,7 +5,7 @@ use serde_json::json;
 
 pub async fn get_user(_app: Data<DB>, Path((user_id, name)): Path<(i32, String)>) -> HttpResponse {
     // HttpResponse{value: json!({ "id": 1, "name": "User" }).to_string()}
-    HttpResponse::new().json(json!({ "id": 1, "name": "User" })).unwrap()
+    HttpResponse::new().json(json!({ "id": user_id, "name": name })).unwrap()
 }
 
 pub async fn delete_user(_app: Data<DB>, Path(user_id): Path<i32>) -> HttpResponse {

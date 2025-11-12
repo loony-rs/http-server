@@ -226,4 +226,46 @@ where
     }
 }
 
+// macro_rules! impl_from_request_for_path {
+//     ($(($($t:ty),+))+) => {
+//         $(
+//             impl<T, $($t),+> FromRequest for (Data<T>, Path<($($t),+)>)
+//             where
+//                 T: Clone + Send + Sync + 'static,
+//                 $($t: FromStr + Clone + Send + Sync + 'static,)+
+//             {
+//                 type Error = ();
+//                 type Future = Ready<Result<Self, Self::Error>>;
 
+//                 fn from_request(req: &ServiceRequest) -> Self::Future {
+//                     let data = match req.extensions().get::<T>() {
+//                         Some(d) => Data(d.clone()),
+//                         None => return ready(Err(())),
+//                     };
+
+//                     let path = req.path();
+//                     let segments: Vec<&str> = path.trim_matches('/').split('/').collect();
+                    
+//                     const EXPECTED_COUNT: usize = [0 $(+ replace_expr!($t 1))+];
+//                     if segments.len() < EXPECTED_COUNT {
+//                         return ready(Err(()));
+//                     }
+
+//                     let mut iter = segments.iter();
+//                     $(
+//                         let $t: $t = match iter.next().unwrap().parse() {
+//                             Ok(val) => val,
+//                             Err(_) => return ready(Err(())),
+//                         };
+//                     )+
+
+//                     ready(Ok((data, Path(($($t),+)))))
+//                 }
+//             }
+//         )+
+//     };
+// }
+
+// macro_rules! replace_expr {
+//     ($_t:ty, $sub:expr) => { $sub };
+// }
