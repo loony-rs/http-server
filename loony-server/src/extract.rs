@@ -8,6 +8,42 @@ use std::{pin::Pin, task::Poll};
 
 use loony_service::{Service, ServiceFactory};
 
+pub trait FromPathSegments: Clone {
+    fn from_segments(segments: &[&str]) -> Option<Self>
+    where
+        Self: Sized;
+}
+
+impl FromPathSegments for (i32, String) {
+    fn from_segments(segments: &[&str]) -> Option<Self> {
+        if segments.len() < 2 { return None; }
+        let id = segments[0].parse().ok()?;
+        let name = segments[1].to_string();
+        Some((id, name))
+    }
+}
+
+impl FromPathSegments for (i32, i32) {
+    fn from_segments(segments: &[&str]) -> Option<Self> {
+        if segments.len() < 2 { return None; }
+        Some((segments[0].parse().ok()?, segments[1].parse().ok()?))
+    }
+}
+
+impl FromPathSegments for (String, String) {
+    fn from_segments(segments: &[&str]) -> Option<Self> {
+        if segments.len() < 2 { return None; }
+        Some((segments[0].to_string(), segments[1].to_string()))
+    }
+}
+
+impl FromPathSegments for (i32, String, String) {
+    fn from_segments(segments: &[&str]) -> Option<Self> {
+        if segments.len() < 3 { return None; }
+        Some((segments[0].parse().ok()?, segments[1].to_string(), segments[2].to_string()))
+    }
+}
+
 pub trait FromRequest: Clone {
     type Future: Future<Output=Result<Self, ()>>;
     fn from_request(req: &ServiceRequest) -> Self::Future;
@@ -88,30 +124,19 @@ where
 impl<T, P> FromRequest for (Data<T>, Path<P>,)
 where
     T: Clone + Send + Sync + 'static,
-    P: Clone + From<(i32, String)>,
+    P: FromPathSegments + Clone,
 {
-    type Future = Ready<Result<(Data<T>, Path<P>,), ()>>;
+    type Future = Ready<Result<(Data<T>, Path<P>), ()>>;
+
     fn from_request(req: &ServiceRequest) -> Self::Future {
         let a = req.extensions.get::<T>().unwrap();
         let path = req.req.uri.clone().unwrap();
         let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
 
-        if segments.len() < 4 {
-            return ready(Err(()));
+        match P::from_segments(&segments[2..]) {
+            Some(p) => ready(Ok((Data(a.clone()), Path(p)))),
+            None => ready(Err(())),
         }
-
-        let user_id_str = segments[2];
-        let name_str = segments[3];
-
-        let user_id = match user_id_str.parse::<i32>() {
-            Ok(id) => id,
-            Err(_) => {
-                return ready(Err(()))
-            }
-        };
-
-        let p = P::from((user_id, name_str.to_string()));
-        return ready(Ok((Data(a.clone()), Path(p),)));
     }
 }
 
