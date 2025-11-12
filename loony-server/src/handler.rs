@@ -96,11 +96,10 @@ where
     type Error = ();
     type Future = HandlerServiceResponse<R, O>;
 
-    fn call(&mut self, (param, req): (P, ServiceRequest)) -> Self::Future {
+    fn call(&mut self, (param, _): (P, ServiceRequest)) -> Self::Future {
         HandlerServiceResponse {
             fut: self.factory.call(param),
             fut2: None,
-            // req: Some(req),
         }
     }
 }
@@ -112,7 +111,6 @@ where
 {
     fut: Pin<&'pin mut R>,
     fut2: Pin<&'pin mut Option<O::Future>>,
-    // req: &'pin mut Option<ServiceRequest>
 }
 
 pub struct HandlerServiceResponse<R, O> 
@@ -122,7 +120,6 @@ where
 {
     fut: R,
     fut2: Option<O::Future>,
-    // req: Option<ServiceRequest>
 }
 
 impl<R, O> HandlerServiceResponse<R, O> 
@@ -135,8 +132,7 @@ where
             let Self {fut, fut2} = self.get_unchecked_mut();
             HandlerServiceResponseProjection {
                 fut: Pin::new_unchecked(fut),
-                fut2: Pin::new_unchecked(fut2),
-                // req
+                fut2: Pin::new_unchecked(fut2)
             }
         }
     }

@@ -4,7 +4,6 @@ pub mod route;
 pub mod extensions;
 pub mod scope;
 pub mod resource;
-pub mod config;
 pub mod response;
 pub mod request;
 pub mod service;

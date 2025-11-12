@@ -1,7 +1,5 @@
 use std::{collections::HashMap, future::{Future, Ready, ready}};
-use futures::executor::block_on;
-
-use crate::{response::{HttpResponse, StatusCode}, service::{ServiceRequest, ServiceResponse}};
+use crate::{response::{HttpResponse, StatusCode}, service::ServiceResponse};
 
 pub trait Responder {
     type Future: Future<Output=ServiceResponse>;

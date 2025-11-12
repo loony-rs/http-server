@@ -4,7 +4,6 @@ use std::rc::Rc;
 use loony_service::IntoServiceFactory;
 
 use crate::app_service::AppFactory;
-use crate::config::ServiceConfig;
 use crate::extensions::Extensions;
 use crate::route::{Route};
 use crate::router::Router;
@@ -36,13 +35,6 @@ impl App {
     pub fn route(mut self, route: Route) -> Self 
     {
         self.services.push(Box::new(route));
-        self
-    }
-
-    pub fn configure<'a, T>(mut self, cnfg: T) -> Self where T: Fn(&mut ServiceConfig) {
-        let mut configs = ServiceConfig::new();
-        cnfg(&mut configs);
-        self.services.extend(configs.services);
         self
     }
 

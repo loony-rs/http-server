@@ -109,6 +109,7 @@ mod tests {
     use crate::service::AppServiceFactory;
     use crate::service::ServiceRequest;
     use crate::resource::Resource;
+    use async_std::task::block_on;
     use loony_service::Service;
     use std::rc::Rc;
     use crate::route::RouteServices;
@@ -119,18 +120,19 @@ mod tests {
 
     #[test]
     fn resource() {
-      let r = Route::new("/home");
-      let r = r.to(index);
-      let rs = Resource::new("".to_string());
-      let mut rs = rs.route(r);
-      let mut a_ser = RouteServices::new();
-      rs.register(&mut a_ser);
+      let route = Route::new("/home").to(index);
+      let mut resource = Resource::new("".to_string()).route(route);
+      let mut route_services = RouteServices::new();
+      resource.register(&mut route_services);
+
+      let one = route_services.services.get(0).unwrap();
       let req = HttpRequest::new();
       let ext = Extensions::new();
-      let sr = ServiceRequest { req, extensions:Rc::new(ext) };
-      // let mut a= rs.route_service.borrow_mut();
-      // if let Some(mut c) = a.take() {
-      //   c.call(sr);
-      // }
+      let service_request = ServiceRequest { req, extensions:Rc::new(ext) };
+
+      let res = one.borrow_mut().call(service_request);
+      let res = block_on(res).unwrap();
+      let res = res.0;
+      assert_eq!("Hello World!".to_string(), res);
     }
 }

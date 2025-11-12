@@ -9,7 +9,7 @@ use loony_service::{
 use crate::{
     extract::{Extract, FromRequest}, 
     handler::{Factory, Handler}, 
-    resource::{Resource, FinalRouteService}, responder::Responder, scope::Scope, service::{AppServiceFactory, HttpServiceFactory, ServiceFactoryWrapper, ServiceRequest, ServiceResponse}
+    resource::{FinalRouteService}, responder::Responder, scope::Scope, service::{AppServiceFactory, ServiceRequest, ServiceResponse}
 };
 
 #[derive(Clone)]
