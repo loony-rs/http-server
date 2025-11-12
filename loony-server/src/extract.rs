@@ -38,6 +38,9 @@ impl FromRequest for String {
 #[derive(Clone)]
 pub struct Data<T>(pub T);
 
+#[derive(Clone)]
+pub struct Path(pub i32, pub String);
+
 // impl<T> FromRequest for Data<T>
 // where
 //     T: Clone + Send + Sync + 'static,
@@ -83,6 +86,19 @@ where
     }
 }
 
+impl<T> FromRequest for (Data<T>, Path,)
+where
+    T: Clone + Send + Sync + 'static
+{
+    type Future = Ready<Result<(Data<T>, Path,), ()>>;
+    fn from_request(req: &ServiceRequest) -> Self::Future {
+        let a = req.extensions.get::<T>().unwrap();
+        let b = 1;
+        let c = req.req.uri.clone();
+        // let b = &req.req.params;
+        return ready(Ok((Data(a.clone()), Path(b, c.unwrap()),)));
+    }
+}
 
 pub struct Extract<T: FromRequest, S> {
     service: S,

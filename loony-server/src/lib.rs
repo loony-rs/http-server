@@ -11,7 +11,6 @@ pub mod service;
 pub mod extract;
 pub mod app_service;
 pub mod error;
-pub mod builder;
 pub mod connection;
 pub mod router;
 

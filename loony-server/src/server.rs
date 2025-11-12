@@ -103,12 +103,11 @@ where F: Fn() -> I + Send + Clone + 'static,
     
     pub fn run(&mut self, listener: std::net::TcpListener) {
         let (routes, extensions) = self.new_service().unwrap();
-       let y = Run {
+        Run {
             routes,
             extensions: Rc::new(extensions),
             listener,
-        };
-        y.run();
+        }.run();
     }
 
     // /// Starts the server and initializes all services

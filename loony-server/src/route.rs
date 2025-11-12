@@ -89,9 +89,9 @@ impl<'route> Route {
 
 impl AppServiceFactory for Route {
     fn register(&mut self, config: &mut RouteServices) {
-        let x = self.service.new_service(());
-        let res = block_on(x).unwrap();
-        config.service(FinalRouteService { service: res, route_name: self.path.clone() });
+        let service = self.service.new_service(());
+        let service = block_on(service).unwrap();
+        config.service(FinalRouteService { service, route_name: self.path.clone() });
     }
 }
 

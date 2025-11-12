@@ -100,7 +100,7 @@ where
         HandlerServiceResponse {
             fut: self.factory.call(param),
             fut2: None,
-            req: Some(req),
+            // req: Some(req),
         }
     }
 }
@@ -112,7 +112,7 @@ where
 {
     fut: Pin<&'pin mut R>,
     fut2: Pin<&'pin mut Option<O::Future>>,
-    req: &'pin mut Option<ServiceRequest>
+    // req: &'pin mut Option<ServiceRequest>
 }
 
 pub struct HandlerServiceResponse<R, O> 
@@ -122,7 +122,7 @@ where
 {
     fut: R,
     fut2: Option<O::Future>,
-    req: Option<ServiceRequest>
+    // req: Option<ServiceRequest>
 }
 
 impl<R, O> HandlerServiceResponse<R, O> 
@@ -132,11 +132,11 @@ where
 {
     fn _project<'pin>(self: Pin<&'pin mut Self>) -> HandlerServiceResponseProjection<'pin, R, O> {
         unsafe {
-            let Self {fut, fut2, req} = self.get_unchecked_mut();
+            let Self {fut, fut2} = self.get_unchecked_mut();
             HandlerServiceResponseProjection {
                 fut: Pin::new_unchecked(fut),
                 fut2: Pin::new_unchecked(fut2),
-                req
+                // req
             }
         }
     }
@@ -161,7 +161,7 @@ where
         }
         match this.fut.poll(cx) {
             Poll::Ready(res) => {
-                let fut = res.respond(this.req.as_ref().unwrap());
+                let fut = res.respond();
                 self.as_mut()._project().fut2.set(Some(fut));
                 self.poll(cx)
             },

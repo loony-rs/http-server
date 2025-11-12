@@ -11,7 +11,6 @@ use loony_service::{ServiceFactory, Service};
 
 pub struct AppFactory {
     pub services: Rc<RefCell<Vec<Box<dyn AppServiceFactory>>>>,
-    // pub app_data: AppState,
     pub extensions: RefCell<Option<Extensions>>,
 }
 
@@ -31,27 +30,24 @@ impl ServiceFactory for AppFactory {
     type Future = Ready<Result<AppHttpService, ()>>;
 
     fn new_service(&self, _: Self::Config) -> Self::Future {
-        let mut config = RouteServices::new();
+        let mut route_services = RouteServices::new();
         std::mem::take(&mut *self.services.borrow_mut())
         .into_iter()
-        .for_each(|mut srv| srv.register(&mut config));
+        .for_each(|mut srv| srv.register(&mut route_services));
 
-        let services = config.into_services();
+        let route_services = route_services.into_services();
         let mut routes = AHashMap::new();
-        services.iter().for_each(|f| {
-            let g = Rc::clone(f);
-            let h = g.as_ref().borrow();
-            let i = h.route_name.clone();
-            routes.insert(i, Rc::clone(&g));
+        route_services.iter().for_each(|f| {
+            routes.insert(f.borrow().route_name.clone(), Rc::clone(f));
         });
-        let new_ext = self
+        let extensions = self
             .extensions
             .borrow_mut()
             .take()
             .unwrap_or_else(Extensions::new);
         ready(Ok(AppHttpService {
             routes,
-            extensions: new_ext
+            extensions
         }))
     }
 }

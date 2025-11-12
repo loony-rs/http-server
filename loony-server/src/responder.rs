@@ -5,14 +5,14 @@ use crate::{response::{HttpResponse, StatusCode}, service::{ServiceRequest, Serv
 
 pub trait Responder {
     type Future: Future<Output=ServiceResponse>;
-    fn respond(&self, req: &ServiceRequest) -> Self::Future;
+    fn respond(&self) -> Self::Future;
 }
 
 // Implement Responder for String
 impl Responder for String {
     type Future = Ready<ServiceResponse>;
 
-    fn respond(&self, _: &ServiceRequest) -> Self::Future {
+    fn respond(&self) -> Self::Future {
         let response = HttpResponse::new().body(self.clone()).build();
         ready(ServiceResponse(response))
     }
@@ -22,7 +22,7 @@ impl Responder for String {
 impl Responder for &str {
     type Future = Ready<ServiceResponse>;
 
-    fn respond(&self, _: &ServiceRequest) -> Self::Future {
+    fn respond(&self) -> Self::Future {
         let response = HttpResponse::new().body(self.to_string()).build();
         ready(ServiceResponse(response))
     }
@@ -35,7 +35,7 @@ where
 {
     type Future = Ready<ServiceResponse>;
 
-    fn respond(&self, _: &ServiceRequest) -> Self::Future {
+    fn respond(&self) -> Self::Future {
         match self {
             Ok(success) => {
                 let response = HttpResponse::new().body(success.clone()).build();
@@ -54,7 +54,7 @@ where
 impl Responder for HttpResponse {
     type Future = Ready<ServiceResponse>;
 
-    fn respond(&self, _: &ServiceRequest) -> Self::Future {
+    fn respond(&self) -> Self::Future {
         ready(ServiceResponse(self.clone().build()))
     }
 }
@@ -63,7 +63,7 @@ impl Responder for HttpResponse {
 impl Responder for Vec<u8> {
     type Future = Ready<ServiceResponse>;
 
-    fn respond(&self, _: &ServiceRequest) -> Self::Future {
+    fn respond(&self) -> Self::Future {
         // Convert bytes to string (you might want to handle this differently)
         let body = String::from_utf8_lossy(self).to_string();
         let mut response = HttpResponse::new().body(body);
@@ -77,7 +77,7 @@ impl Responder for Vec<u8> {
 impl Responder for &[u8] {
     type Future = Ready<ServiceResponse>;
 
-    fn respond(&self, _: &ServiceRequest) -> Self::Future {
+    fn respond(&self) -> Self::Future {
         let body = String::from_utf8_lossy(self).to_string();
         let mut response = HttpResponse::new().body(body);
         response.headers.insert("Content-Type".to_string(), "application/octet-stream".to_string());
@@ -93,7 +93,7 @@ impl Responder for &[u8] {
 // {
 //     type Future = Ready<ServiceResponse>;
 
-//     fn respond(&self, _: &ServiceRequest) -> Self::Future {
+//     fn respond(&self) -> Self::Future {
 //         match HttpResponse::with_json(self) {
 //             Ok(response) => ready(ServiceResponse(response)),
 //             Err(error) => {
@@ -106,23 +106,23 @@ impl Responder for &[u8] {
 // }
 
 // Implement Responder for Option<T>
-impl<T> Responder for Option<T>
-where
-    T: Responder,
-{
-    type Future = Ready<ServiceResponse>;
+// impl<T> Responder for Option<T>
+// where
+//     T: Responder,
+// {
+//     type Future = Ready<ServiceResponse>;
 
-    fn respond(&self, req: &ServiceRequest) -> Self::Future {
-        match self {
-            Some(inner) => ready(block_on(inner.respond(req))),
-            None => {
-                let response = HttpResponse::new().body("Not Found")
-                    .with_status(StatusCode::NotFound).build();
-                ready(ServiceResponse(response))
-            }
-        }
-    }
-}
+//     fn respond(&self, req: &ServiceRequest) -> Self::Future {
+//         match self {
+//             Some(inner) => ready(block_on(inner.respond(req))),
+//             None => {
+//                 let response = HttpResponse::new().body("Not Found")
+//                     .with_status(StatusCode::NotFound).build();
+//                 ready(ServiceResponse(response))
+//             }
+//         }
+//     }
+// }
 
 // Implement Responder for tuples (Status, Body)
 impl<T> Responder for (StatusCode, T)
@@ -132,7 +132,7 @@ where
 {
     type Future = Ready<ServiceResponse>;
 
-    fn respond(&self, _: &ServiceRequest) -> Self::Future {
+    fn respond(&self) -> Self::Future {
         let (status, body) = self;
         let response = HttpResponse::with_body(body)
             .with_status(*status).build();
@@ -148,7 +148,7 @@ where
 {
     type Future = Ready<ServiceResponse>;
 
-    fn respond(&self, _: &ServiceRequest) -> Self::Future {
+    fn respond(&self) -> Self::Future {
         let (status, headers, body) = self;
         let mut response = HttpResponse::with_body(body)
             .with_status(*status);
@@ -162,7 +162,7 @@ where
 impl Responder for () {
     type Future = Ready<ServiceResponse>;
 
-    fn respond(&self, _: &ServiceRequest) -> Self::Future {
+    fn respond(&self) -> Self::Future {
         let response = HttpResponse::new().build();
         ready(ServiceResponse(response))
     }
@@ -174,7 +174,7 @@ pub struct Redirect(pub String);
 impl Responder for Redirect {
     type Future = Ready<ServiceResponse>;
 
-    fn respond(&self, _: &ServiceRequest) -> Self::Future {
+    fn respond(&self) -> Self::Future {
         let mut response = HttpResponse::new()
             .with_status(StatusCode::Found)
             .with_header("Location", &self.0);
@@ -193,7 +193,7 @@ where
 {
     type Future = Ready<ServiceResponse>;
 
-    fn respond(&self, _: &ServiceRequest) -> Self::Future {
+    fn respond(&self) -> Self::Future {
         let response = HttpResponse::with_body(self.0.clone())
             .with_header("Content-Type", "text/html; charset=utf-8").build();
         ready(ServiceResponse(response))
@@ -209,7 +209,7 @@ where
 {
     type Future = Ready<ServiceResponse>;
 
-    fn respond(&self, _: &ServiceRequest) -> Self::Future {
+    fn respond(&self) -> Self::Future {
         let response = HttpResponse::with_body(self.0.clone())
             .with_header("Content-Type", "text/plain; charset=utf-8").build();
         ready(ServiceResponse(response))
