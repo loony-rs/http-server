@@ -39,7 +39,7 @@ impl FromRequest for String {
 pub struct Data<T>(pub T);
 
 #[derive(Clone)]
-pub struct Path(pub i32, pub String);
+pub struct Path<T>(pub T);
 
 // impl<T> FromRequest for Data<T>
 // where
@@ -81,22 +81,37 @@ where
     type Future = Ready<Result<(Data<T>, String,), ()>>;
     fn from_request(req: &ServiceRequest) -> Self::Future {
         let a = req.extensions.get::<T>().unwrap();
-        // let b = &req.req.params;
         return ready(Ok((Data(a.clone()), "".to_string(),)));
     }
 }
 
-impl<T> FromRequest for (Data<T>, Path,)
+impl<T, P> FromRequest for (Data<T>, Path<P>,)
 where
-    T: Clone + Send + Sync + 'static
+    T: Clone + Send + Sync + 'static,
+    P: Clone + From<(i32, String)>,
 {
-    type Future = Ready<Result<(Data<T>, Path,), ()>>;
+    type Future = Ready<Result<(Data<T>, Path<P>,), ()>>;
     fn from_request(req: &ServiceRequest) -> Self::Future {
         let a = req.extensions.get::<T>().unwrap();
-        let b = 1;
-        let c = req.req.uri.clone();
-        // let b = &req.req.params;
-        return ready(Ok((Data(a.clone()), Path(b, c.unwrap()),)));
+        let path = req.req.uri.clone().unwrap();
+        let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+
+        if segments.len() < 4 {
+            return ready(Err(()));
+        }
+
+        let user_id_str = segments[2];
+        let name_str = segments[3];
+
+        let user_id = match user_id_str.parse::<i32>() {
+            Ok(id) => id,
+            Err(_) => {
+                return ready(Err(()))
+            }
+        };
+
+        let p = P::from((user_id, name_str.to_string()));
+        return ready(Ok((Data(a.clone()), Path(p),)));
     }
 }
 

@@ -17,7 +17,7 @@ fn routes() -> Router {
     .service(
         route::scope("/user")
         .route(route::get("/all").to(controller::users))
-        .route(route::get("/get/:user_id").to(controller::get_user))
+        .route(route::get("/get/:user_id/:user_name").to(controller::get_user))
         .route(route::get("/delete/:user_id").to(controller::get_user))
         .route(route::get("/update/:user_id").to(controller::get_user))
     )
