@@ -1392,6 +1392,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "loony-router"
+version = "0.1.0"
+
+[[package]]
 name = "loony-server"
 version = "0.1.0"
 dependencies = [
