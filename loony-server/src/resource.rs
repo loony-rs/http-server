@@ -71,6 +71,7 @@ pub struct FinalFutureRouteService {
     pub fut: RouteFutureService,
     pub route_name: String,
 }
+
 pub struct FinalRouteService {
     pub service: BoxedRouteService,
     pub route_name: String,

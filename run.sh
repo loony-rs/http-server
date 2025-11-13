@@ -13,4 +13,4 @@ if [ "$#" -eq 1 ]; then
     fi
 fi
 
-./target/release/server
+./target/release/app
