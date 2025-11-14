@@ -14,6 +14,15 @@ pub trait FromPathSegments: Clone {
         Self: Sized;
 }
 
+
+impl FromPathSegments for i32 {
+    fn from_segments(segments: &[&str]) -> Option<Self> {
+        if segments.len() < 2 { return None; }
+        let id = segments[0].parse().ok()?;
+        Some(id)
+    }
+}
+
 impl FromPathSegments for (i32, String) {
     fn from_segments(segments: &[&str]) -> Option<Self> {
         if segments.len() < 2 { return None; }

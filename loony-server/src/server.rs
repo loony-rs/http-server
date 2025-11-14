@@ -1,16 +1,16 @@
 use crate::{app_service::RadixRouter, connection::Connection, error::*, response::HttpResponse};
-use ahash::AHashMap;
-use async_std::task::block_on;
-use loony_service::{IntoServiceFactory, Service, ServiceFactory};
 use crate::{app_service::AppHttpService, extensions::Extensions, request::HttpRequest, resource::FinalRouteService, service::ServiceRequest};
-use std::{cell::RefCell, marker::PhantomData, net::TcpStream, rc::Rc, time::Duration};
-use socket2::{Socket, Domain, Type};
+
 use std::net::TcpListener;
+use async_std::task::block_on;
+use socket2::{Socket, Domain, Type};
+use loony_service::{IntoServiceFactory, Service, ServiceFactory};
+use std::{cell::RefCell, marker::PhantomData, net::TcpStream, rc::Rc, time::Duration};
 
 pub struct Run {
-    routes: AHashMap<String, Rc<RefCell<FinalRouteService>>>,
+    // routes: AHashMap<String, Rc<RefCell<FinalRouteService>>>,
     extensions: Rc<Extensions>,
-    routess: RadixRouter,
+    route: RadixRouter,
     listener: std::net::TcpListener,
 }
 
@@ -49,12 +49,9 @@ impl Run {
         &self,
         request: HttpRequest,
     ) -> Result<String, ServerError> {
-        // :TODO
         let path = request.uri.as_ref()
             .ok_or(HandlerError::MissingUri)?;
-        // let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty() || !s.contains(":")).collect();
-        // let uri = segments[0..3].join("");
-        if let Some((service, rou)) = self.routess.find_route(&path) {
+        if let Some((service, _)) = self.route.find_route(&path) {
             self.execute_service(service.clone(), request)
         } else {
             Ok(HttpResponse::bad_request().build())
@@ -105,17 +102,20 @@ where F: Fn() -> I + Send + Clone + 'static,
     }
     
     pub fn run(&mut self, listener: std::net::TcpListener) {
-        let (routes, extensions, routess) = self.new_service().unwrap();
+        let (extensions, route) = self.new_service().unwrap();
         Run {
-            routes,
-            routess,
+            route,
             extensions: Rc::new(extensions),
             listener,
         }.run();
     }
 
     // /// Starts the server and initializes all services
-    fn new_service(&mut self) ->  Result<(AHashMap<String, Rc<RefCell<FinalRouteService>>>, Extensions, RadixRouter), ServerError>
+    fn new_service(&mut self) ->  Result<(
+        // AHashMap<String, Rc<RefCell<FinalRouteService>>>, 
+        Extensions, 
+        RadixRouter
+    ), ServerError>
     {
         let app = (self.app)();
         let app_factory = app.into_factory();
@@ -125,7 +125,7 @@ where F: Fn() -> I + Send + Clone + 'static,
         
         match http_service {
             Ok(service) => {
-                Ok((service.routes, service.extensions, service.rou))
+                Ok((service.extensions, service.route))
             }
             Err(_) => {
                 Err(ServerError::service_init_error(String::from("Failed to initialize app services.")))

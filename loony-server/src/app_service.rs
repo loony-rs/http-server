@@ -1,9 +1,8 @@
-use std::collections::HashMap;
 use std::rc::Rc;
-use ahash::AHashMap;
 use std::cell::RefCell;
 use futures::future::ready;
 use futures::{future::Ready};
+use std::collections::HashMap;
 use crate::route::RouteServices;
 use crate::extensions::Extensions;
 use crate::resource::FinalRouteService;
@@ -133,16 +132,16 @@ impl ServiceFactory for AppFactory {
         std::mem::take(&mut *self.services.borrow_mut())
         .into_iter()
         .for_each(|mut srv| srv.register(&mut route_services));
-        let mut rout = RadixRouter::new();
+        let mut radix_router = RadixRouter::new();
         let route_services = route_services.into_services();
-        let mut routes = AHashMap::new();
+        // let mut routes = AHashMap::new();
         route_services.iter().for_each(|f| {
             let route = f.borrow().route_name.clone();
-            rout.add_route(&route, Rc::clone(&f));
-            let segments: Vec<&str> = route.split('/').filter(|s| !s.is_empty())
-            .filter(|s| !s.contains(":")).collect();
-            let uri = segments.join("");
-            routes.insert(uri, Rc::clone(f));
+            radix_router.add_route(&route, Rc::clone(&f));
+            // let segments: Vec<&str> = route.split('/').filter(|s| !s.is_empty())
+            // .filter(|s| !s.contains(":")).collect();
+            // let uri = segments.join("");
+            // routes.insert(uri, Rc::clone(f));
         });
         let extensions = self
             .extensions
@@ -150,17 +149,16 @@ impl ServiceFactory for AppFactory {
             .take()
             .unwrap_or_else(Extensions::new);
         ready(Ok(AppHttpService {
-            routes,
+            route: radix_router,
             extensions,
-            rou: rout
         }))
     }
 }
  
 pub struct AppHttpService {
-    pub(crate) routes: AHashMap<String, Rc<RefCell<FinalRouteService>>>,
+    // pub(crate) routes: AHashMap<String, Rc<RefCell<FinalRouteService>>>,
     pub(crate) extensions: Extensions,
-    pub(crate) rou: RadixRouter,
+    pub(crate) route: RadixRouter,
 }
 
 impl Service for AppHttpService {
