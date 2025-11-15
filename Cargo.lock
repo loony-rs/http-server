@@ -1419,6 +1419,7 @@ dependencies = [
  "http",
  "httparse",
  "log 0.4.28",
+ "loony-router",
  "loony-service",
  "multipart",
  "pin-project",

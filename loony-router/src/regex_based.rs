@@ -77,45 +77,43 @@ fn match_path(routes: &[Route], path: &str) -> Option<(String, HashMap<String, S
     None
 }
 
+// fn main() {
+//     // templates given by the user
+//     let templates = [
+//         "/",
+//         "/user/all",
+//         "/user/get/:user_id",
+//         "/user/get/:user_id/:user_name",
+//     ];
 
+//     let routes = build_routes(&templates);
 
-fn main() {
-    // templates given by the user
-    let templates = [
-        "/",
-        "/user/all",
-        "/user/get/:user_id",
-        "/user/get/:user_id/:user_name",
-    ];
+//     // test paths
+//     let tests = [
+//         "/",
+//         "/user/get/all",
+//         "/user/get/42",
+//         "/user/get/42/john-doe",
+//         "/user/get",                   // no match
+//         "/user/get/42/extra/segment",  // no match
+//     ];
 
-    let routes = build_routes(&templates);
-
-    // test paths
-    let tests = [
-        "/",
-        "/user/get/all",
-        "/user/get/42",
-        "/user/get/42/john-doe",
-        "/user/get",                   // no match
-        "/user/get/42/extra/segment",  // no match
-    ];
-
-    for path in &tests {
-        match match_path(&routes, path) {
-            Some((template, params)) => {
-                println!("{}  -> matched template: {}", path, template);
-                if params.is_empty() {
-                    println!("   params: (none)");
-                } else {
-                    println!("   params:");
-                    for (k, v) in params.iter() {
-                        println!("     {} = {}", k, v);
-                    }
-                }
-            }
-            None => {
-                println!("{}  -> no match", path);
-            }
-        }
-    }
-}
+//     for path in &tests {
+//         match match_path(&routes, path) {
+//             Some((template, params)) => {
+//                 println!("{}  -> matched template: {}", path, template);
+//                 if params.is_empty() {
+//                     println!("   params: (none)");
+//                 } else {
+//                     println!("   params:");
+//                     for (k, v) in params.iter() {
+//                         println!("     {} = {}", k, v);
+//                     }
+//                 }
+//             }
+//             None => {
+//                 println!("{}  -> no match", path);
+//             }
+//         }
+//     }
+// }

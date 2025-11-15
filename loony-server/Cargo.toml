@@ -28,3 +28,4 @@ log = { workspace = true }
 async-std = { workspace = true }
 loony-service = { workspace = true }
 regex.workspace = true
+loony-router.workspace = true

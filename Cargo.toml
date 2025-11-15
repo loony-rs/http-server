@@ -20,6 +20,7 @@ members = [
 loony-service = { workspace = true }
 loony-server = { workspace = true }
 loony-router = { workspace = true }
+#
 deadpool-postgres = { workspace = true }
 tokio = { workspace = true }
 derive_more = { workspace = true }
@@ -37,7 +38,6 @@ regex.workspace = true
 loony-service = {path = "./loony-service"}
 loony-server = {path = "./loony-server"}
 loony-router = {path = "./loony-router"}
-
 #
 slab = "0.4.11"
 deadpool-postgres = "0.14.1"

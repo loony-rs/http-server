@@ -1,4 +1,4 @@
-use crate::{app_service::RadixRouter, connection::Connection, error::*, response::HttpResponse};
+use crate::{router::AllRouteServices, connection::Connection, error::*, response::HttpResponse};
 use crate::{app_service::AppHttpService, extensions::Extensions, request::HttpRequest, resource::FinalRouteService, service::ServiceRequest};
 
 use std::net::TcpListener;
@@ -10,7 +10,7 @@ use std::{cell::RefCell, marker::PhantomData, net::TcpStream, rc::Rc, time::Dura
 pub struct Run {
     // routes: AHashMap<String, Rc<RefCell<FinalRouteService>>>,
     extensions: Rc<Extensions>,
-    route: RadixRouter,
+    route: AllRouteServices,
     listener: std::net::TcpListener,
 }
 
@@ -51,7 +51,7 @@ impl Run {
     ) -> Result<String, ServerError> {
         let path = request.uri.as_ref()
             .ok_or(HandlerError::MissingUri)?;
-        if let Some((service, _)) = self.route.find_route(&path) {
+        if let Some(service) = self.route.find_route(&path) {
             self.execute_service(service.clone(), request)
         } else {
             Ok(HttpResponse::bad_request().build())
@@ -114,7 +114,7 @@ where F: Fn() -> I + Send + Clone + 'static,
     fn new_service(&mut self) ->  Result<(
         // AHashMap<String, Rc<RefCell<FinalRouteService>>>, 
         Extensions, 
-        RadixRouter
+        AllRouteServices
     ), ServerError>
     {
         let app = (self.app)();
@@ -180,7 +180,7 @@ where F: Fn() -> I + Send + Clone + 'static,
     /// Panics if the server fails to start or service initialization fails
     pub async fn run(&mut self) {
         let mut servers = Vec::new();
-        for _ in 0..4 {
+        for _ in 0..1 {
             let app = self.app.clone();
             let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
             socket.set_reuse_port(true).unwrap();
