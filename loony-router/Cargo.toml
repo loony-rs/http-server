@@ -3,8 +3,11 @@ name = "loony-router"
 version = "0.1.0"
 edition = "2024"
 
-# [[bin]]
-# name="deepseek"
-# path="./src/bin/main.rs"
+[[bin]]
+name="loony-router"
+path="./src/main.rs"
 
 [dependencies]
+matchit = { workspace = true }
+regex.workspace = true
+futures-util = { workspace = true }

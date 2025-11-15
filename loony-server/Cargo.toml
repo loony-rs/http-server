@@ -27,3 +27,4 @@ thiserror = { workspace = true }
 log = { workspace = true }
 async-std = { workspace = true }
 loony-service = { workspace = true }
+regex.workspace = true

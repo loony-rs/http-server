@@ -73,38 +73,38 @@ impl RadixRouter {
         let mut params = HashMap::new();
         Self::find_in_node(&self.root, &segments, &mut params).map(|h| (h, params))
     }
+pub fn find_in_node(
+    node: &RadixNode,
+    segments: &[&str],
+    params: &mut HashMap<String, String>,
+) -> Option<Rc<RefCell<FinalRouteService>>> {
 
-    pub fn find_in_node(
-        node: &RadixNode,
-        segments: &[&str],
-        params: &mut HashMap<String, String>,
-    ) -> Option<Rc<RefCell<FinalRouteService>>> {
-        if segments.is_empty() {
-            return node.handler.clone();
-        }
-
-        let segment = segments[0];
-        let remaining = &segments[1..];
-
-        // Try static match first
-        if let Some(child_node) = node.static_children.get(segment) {
-            if let Some(handler) = Self::find_in_node(child_node, remaining, params) {
-                return Some(handler);
-            }
-        }
-
-        // Try parameter match
-        if let Some((param_name, child_node)) = &node.param_child {
-            params.insert(param_name.clone(), segment.to_string());
-            if let Some(handler) = Self::find_in_node(child_node, remaining, params) {
-                return Some(handler);
-            }
-            params.remove(param_name);
-        }
-
-        None
+    if segments.is_empty() {
+        return node.handler.clone();
     }
 
+    let segment = segments[0];
+    let remaining = &segments[1..];
+
+    // Try static match first
+    if let Some(child_node) = node.static_children.get(segment) {
+        if let Some(handler) = Self::find_in_node(child_node, remaining, params) {
+            return Some(handler);
+        }
+    }
+
+    // Try parameter match
+    if let Some((param_name, child_node)) = &node.param_child {
+        params.insert(param_name.clone(), segment.to_string());
+        if let Some(handler) = Self::find_in_node(child_node, remaining, params) {
+            return Some(handler);
+        }
+        params.remove(param_name);
+    }
+
+    // ⭐ NEW: if deeper match failed but this node has a handler, return it
+    node.handler.clone()
+}
 }
 
 pub struct AppFactory {
