@@ -2,10 +2,8 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use futures::future::ready;
 use futures::{future::Ready};
-use std::collections::HashMap;
 use crate::route::RouteServices;
 use crate::extensions::Extensions;
-use crate::resource::FinalRouteService;
 use crate::router::AllRouteServices;
 use crate::service::{AppServiceFactory};
 use loony_service::{ServiceFactory, Service};
@@ -37,15 +35,9 @@ impl ServiceFactory for AppFactory {
         .for_each(|mut srv| srv.register(&mut route_services));
         let mut radix_router = AllRouteServices::new();
         let route_services = route_services.into_services();
-        println!("{}", route_services.len());
-        // let mut routes = AHashMap::new();
         route_services.iter().for_each(|f| {
             let route = f.borrow().route_name.clone();
             radix_router.add_route(&route, Rc::clone(&f));
-            // let segments: Vec<&str> = route.split('/').filter(|s| !s.is_empty())
-            // .filter(|s| !s.contains(":")).collect();
-            // let uri = segments.join("");
-            // routes.insert(uri, Rc::clone(f));
         });
         let extensions = self
             .extensions
@@ -60,7 +52,6 @@ impl ServiceFactory for AppFactory {
 }
  
 pub struct AppHttpService {
-    // pub(crate) routes: AHashMap<String, Rc<RefCell<FinalRouteService>>>,
     pub(crate) extensions: Extensions,
     pub(crate) route: AllRouteServices,
 }

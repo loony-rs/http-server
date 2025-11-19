@@ -2,11 +2,8 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub struct RadixNode {
-    // Static path segments: "api", "user", etc.
     pub static_children: HashMap<String, Box<RadixNode>>,
-    // Parameter segments: ":id", ":user_id"
     pub param_child: Option<(String, Box<RadixNode>)>,
-    // service_index for this route (None for intermediate nodes)
     pub service_index: Option<usize>,
 }
 
