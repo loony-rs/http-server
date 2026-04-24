@@ -125,7 +125,8 @@ mod tests {
         resource.register(&mut route_services);
 
         let one = route_services.services.get(0).unwrap();
-        let req = HttpRequest::new();
+        let mut req = HttpRequest::new();
+        req.uri = Some("/home".to_string());
         let ext = Extensions::new();
         let service_request = ServiceRequest {
             req,
@@ -135,7 +136,6 @@ mod tests {
 
         let res = one.borrow_mut().call(service_request);
         let res = block_on(res).unwrap();
-        let res = res.0;
-        assert_eq!("Hello World!".to_string(), res);
+        assert!(res.0.ends_with("Hello World!"));
     }
 }

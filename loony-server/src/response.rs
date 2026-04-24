@@ -1,8 +1,3 @@
-// #[derive(Clone)]
-// pub struct HttpResponse {
-//     pub value: String,
-// }
-
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
@@ -401,38 +396,6 @@ impl std::fmt::Display for InvalidStatusCode {
 }
 
 impl std::error::Error for InvalidStatusCode {}
-
-// #[derive(Debug, Clone, PartialEq)]
-// pub enum StatusCode {
-//     Ok = 200,
-//     Created = 201,
-//     NoContent = 204,
-//     BadRequest = 400,
-//     Unauthorized = 401,
-//     Forbidden = 403,
-//     NotFound = 404,
-//     InternalServerError = 500,
-//     NotImplemented = 501,
-//     ServiceUnavailable = 503,
-// }
-
-// impl Display for StatusCode {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-//         let (code, reason) = match self {
-//             StatusCode::Ok => (200, "OK"),
-//             StatusCode::Created => (201, "Created"),
-//             StatusCode::NoContent => (204, "No Content"),
-//             StatusCode::BadRequest => (400, "Bad Request"),
-//             StatusCode::Unauthorized => (401, "Unauthorized"),
-//             StatusCode::Forbidden => (403, "Forbidden"),
-//             StatusCode::NotFound => (404, "Not Found"),
-//             StatusCode::InternalServerError => (500, "Internal Server Error"),
-//             StatusCode::NotImplemented => (501, "Not Implemented"),
-//             StatusCode::ServiceUnavailable => (503, "Service Unavailable"),
-//         };
-//         write!(f, "{} {}", code, reason)
-//     }
-// }
 
 /// Strip CR and LF characters from a header name or value to prevent injection.
 fn sanitize_header_value(value: String) -> String {

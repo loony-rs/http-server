@@ -570,7 +570,6 @@ pub fn load_tls_config(cert_path: &str, key_path: &str) -> io::Result<Arc<rustls
 pub struct ServerConfig {
     pub port: u16,
     pub workers: usize,
-    pub max_connections: usize,
     pub read_timeout: Duration,
     pub write_timeout: Duration,
     pub tls: Option<TlsConfig>,
@@ -584,7 +583,6 @@ impl Default for ServerConfig {
         Self {
             port: 3005,
             workers,
-            max_connections: 1000,
             read_timeout: Duration::from_secs(30),
             write_timeout: Duration::from_secs(30),
             tls: None,

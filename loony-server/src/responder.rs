@@ -98,44 +98,6 @@ impl Responder for &[u8] {
     }
 }
 
-// Implement Responder for any Serializable type (JSON responses)
-// impl<T> Responder for T
-// where
-//     T: Serialize,
-// {
-//     type Future = Ready<ServiceResponse>;
-
-//     fn respond(&self) -> Self::Future {
-//         match HttpResponse::with_json(self) {
-//             Ok(response) => ready(ServiceResponse(response)),
-//             Err(error) => {
-//                 let error_response = HttpResponse::with_body(format!("Serialization error: {}", error))
-//                     .with_status(500);
-//                 ready(ServiceResponse(error_response))
-//             }
-//         }
-//     }
-// }
-
-// Implement Responder for Option<T>
-// impl<T> Responder for Option<T>
-// where
-//     T: Responder,
-// {
-//     type Future = Ready<ServiceResponse>;
-
-//     fn respond(&self, req: &ServiceRequest) -> Self::Future {
-//         match self {
-//             Some(inner) => ready(block_on(inner.respond(req))),
-//             None => {
-//                 let response = HttpResponse::new().body("Not Found")
-//                     .with_status(StatusCode::NotFound).build();
-//                 ready(ServiceResponse(response))
-//             }
-//         }
-//     }
-// }
-
 // Implement Responder for tuples (Status, Body)
 impl<T> Responder for (StatusCode, T)
 where

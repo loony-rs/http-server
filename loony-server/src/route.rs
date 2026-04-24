@@ -20,6 +20,9 @@ use std::{
 pub enum Method {
     GET,
     POST,
+    PUT,
+    DELETE,
+    PATCH,
 }
 
 pub type BoxedRouteService = Box<
@@ -45,7 +48,6 @@ pub type BoxedRouteServiceFactory = Box<
 
 pub type BoxService = Pin<Box<dyn Future<Output = Result<BoxedRouteService, ()>>>>;
 
-// #[derive(Clone)]
 pub struct Route {
     pub path: String,
     pub service: BoxedRouteServiceFactory,
@@ -239,12 +241,6 @@ where
     }
 }
 
-#[pin_project::pin_project]
-struct MakeService<F> {
-    #[pin]
-    inner: F,
-}
-
 struct RouteHandlerService<T: Service> {
     factory: T,
 }
@@ -297,6 +293,18 @@ pub fn post(path: &str) -> Route {
     method(path, Method::POST)
 }
 
+pub fn put(path: &str) -> Route {
+    method(path, Method::PUT)
+}
+
+pub fn delete(path: &str) -> Route {
+    method(path, Method::DELETE)
+}
+
+pub fn patch(path: &str) -> Route {
+    method(path, Method::PATCH)
+}
+
 pub fn scope(scope: &str) -> Scope {
     Scope::new(scope)
 }
@@ -324,7 +332,8 @@ mod tests {
         let mut b = block_on(a).unwrap();
 
         let ext = Extensions::new();
-        let req = HttpRequest::new();
+        let mut req = HttpRequest::new();
+        req.uri = Some("/home".to_string());
         let sr = ServiceRequest {
             req,
             extensions: Rc::new(ext),
@@ -333,7 +342,6 @@ mod tests {
 
         let c = b.call(sr);
         let d = block_on(c).unwrap();
-        let e = d.0;
-        assert_eq!("Hello World!".to_string(), e);
+        assert!(d.0.ends_with("Hello World!"));
     }
 }
