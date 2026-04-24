@@ -47,7 +47,7 @@ impl ServiceFactory for Resource {
     type Config = ();
  
     fn new_service(&self, _: ()) -> Self::Future {
-        let mut route_name = self.scope.clone();
+        let mut route_name = format!("{}", &self.scope);
         route_name.push_str(&self.route.path);
         let fut = self.route.new_service(());
         FinalFutureRouteService {

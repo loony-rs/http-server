@@ -180,11 +180,10 @@ where
     type Future = Ready<Result<Self::Service, ()>>;
 
     fn new_service(&self, _: Self::Config) -> Self::Future {
-        let a= ExtractService {
+        ready(Ok(ExtractService {
             service: self.service.clone(),
             _t: PhantomData,
-        };
-        ready(Ok(a))
+        }))
     }
 }
 

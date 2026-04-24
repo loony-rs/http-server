@@ -69,7 +69,7 @@ impl Run {
             extensions: self.extensions.clone(),
         };
 
-        let mut service_clone = Rc::clone(&service);
+        let mut service_clone: Rc<RefCell<FinalRouteService>> = Rc::clone(&service);
         let future = service_clone.call(service_request);
         
         match block_on(future) {
