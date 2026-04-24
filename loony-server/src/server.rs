@@ -35,6 +35,8 @@ struct Run {
     route: AllRouteServices,
     middlewares: Vec<Rc<dyn Middleware>>,
     listener: TokioListener,
+    read_timeout: Duration,
+    write_timeout: Duration,
 }
 
 impl Run {
@@ -64,7 +66,7 @@ impl Run {
     /// Serve all requests on a single TCP connection, reusing it while the
     /// client keeps the connection alive.
     async fn handle_connection(&self, stream: TcpStream) -> Result<(), ServerError> {
-        let mut connection = Connection::new(stream)?;
+        let mut connection = Connection::new(stream, self.read_timeout, self.write_timeout)?;
         loop {
             let bytes = match connection.read_http_response() {
                 Ok(b) => b,
@@ -249,6 +251,8 @@ where
     T: ServiceFactory,
 {
     app: F,
+    read_timeout: Duration,
+    write_timeout: Duration,
     _p: PhantomData<T>,
 }
 
@@ -258,9 +262,11 @@ where
     I: IntoServiceFactory<T>,
     T: ServiceFactory<Request = (), Config = (), Service = AppHttpService>,
 {
-    fn new(app: F) -> Self {
+    fn new(app: F, read_timeout: Duration, write_timeout: Duration) -> Self {
         ServeHttpService {
             app,
+            read_timeout,
+            write_timeout,
             _p: PhantomData,
         }
     }
@@ -288,6 +294,8 @@ where
             route,
             middlewares,
             listener: tokio_listener,
+            read_timeout: self.read_timeout,
+            write_timeout: self.write_timeout,
         }
         .run()
         .await;
@@ -368,6 +376,8 @@ where
         })?;
 
         let workers = self.config.workers;
+        let read_timeout = self.config.read_timeout;
+        let write_timeout = self.config.write_timeout;
 
         for i in 0..workers {
             let app = self.app.clone();
@@ -390,7 +400,9 @@ where
                         .expect("failed to build worker runtime");
                     let local = tokio::task::LocalSet::new();
                     local.spawn_local(async move {
-                        ServeHttpService::new(app).run(listener).await;
+                        ServeHttpService::new(app, read_timeout, write_timeout)
+                            .run(listener)
+                            .await;
                     });
                     rt.block_on(local);
                 })

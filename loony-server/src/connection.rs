@@ -25,10 +25,18 @@ enum BodyTransfer {
 }
 
 impl Connection {
-    /// Create a new `Connection` from a `TcpStream`, configuring sensible defaults.
-    pub fn new(stream: TcpStream) -> io::Result<Self> {
-        stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-        stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+    /// Create a new `Connection` from a `TcpStream`.
+    ///
+    /// `read_timeout` controls both the initial header read and the idle
+    /// wait between keep-alive requests.  `write_timeout` bounds each
+    /// response write.  Both come from `ServerConfig`.
+    pub fn new(
+        stream: TcpStream,
+        read_timeout: Duration,
+        write_timeout: Duration,
+    ) -> io::Result<Self> {
+        stream.set_read_timeout(Some(read_timeout))?;
+        stream.set_write_timeout(Some(write_timeout))?;
         stream.set_nodelay(true)?;
         Ok(Self {
             stream,
