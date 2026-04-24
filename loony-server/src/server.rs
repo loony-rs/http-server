@@ -90,8 +90,8 @@ impl Run {
             .ok_or(HandlerError::MissingUri)?
             .clone();
 
-        if let Some(service) = self.route.find_route(&path) {
-            self.call_service(service, request).await
+        if let Some((service, params)) = self.route.find_route(&path) {
+            self.call_service(service, params, request).await
         } else {
             Ok(HttpResponse::bad_request().build())
         }
@@ -106,11 +106,13 @@ impl Run {
     async fn call_service(
         &self,
         service: Rc<RefCell<FinalRouteService>>,
+        params: Vec<String>,
         request: HttpRequest,
     ) -> Result<String, ServerError> {
         let service_request = ServiceRequest {
             req: request,
             extensions: self.extensions.clone(),
+            path_params: Rc::new(params),
         };
 
         // The RefMut is dropped at the semicolon; the future outlives the borrow.

@@ -18,6 +18,7 @@ pub trait RouteServiceFactory {
 pub struct ServiceRequest {
     pub req: HttpRequest,
     pub extensions: Rc<Extensions>,
+    pub path_params: Rc<Vec<String>>,
 }
 
 // #[derive(Clone)]

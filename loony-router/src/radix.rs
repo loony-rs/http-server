@@ -71,19 +71,20 @@ impl RadixRouter {
         Ok(())
     }
 
-    pub fn find_route(&self, path: &str) -> Option<(usize, HashMap<String, String>)> {
+    /// Returns the service index and param values in path-order.
+    pub fn find_route(&self, path: &str) -> Option<(usize, Vec<String>)> {
         let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-        let mut params = HashMap::new();
-        Self::find_in_node(&self.root, &segments, &mut params).map(|h| (h, params))
+        let mut params = Vec::new();
+        Self::find_in_node(&self.root, &segments, &mut params).map(|idx| (idx, params))
     }
 
-    pub fn find_in_node(
+    fn find_in_node(
         node: &RadixNode,
         segments: &[&str],
-        params: &mut HashMap<String, String>,
+        params: &mut Vec<String>,
     ) -> Option<usize> {
         if segments.is_empty() {
-            return node.service_index.clone();
+            return node.service_index;
         }
 
         let segment = segments[0];
@@ -97,15 +98,15 @@ impl RadixRouter {
         }
 
         // Try parameter match
-        if let Some((param_name, child_node)) = &node.param_child {
-            params.insert(param_name.clone(), segment.to_string());
+        if let Some((_param_name, child_node)) = &node.param_child {
+            params.push(segment.to_string());
             if let Some(service_index) = Self::find_in_node(child_node, remaining, params) {
                 return Some(service_index);
             }
-            params.remove(param_name);
+            params.pop();
         }
 
-        node.service_index.clone()
+        node.service_index
     }
 }
 
@@ -145,12 +146,21 @@ mod tests {
     }
 
     #[test]
-    fn find_route_with_param() {
+    fn find_route_with_one_param() {
         let mut router = RadixRouter::new();
         router.add_route("/user/:id", 0).unwrap();
         let (idx, params) = router.find_route("/user/42").unwrap();
         assert_eq!(idx, 0);
-        assert_eq!(params["id"], "42");
+        assert_eq!(params, vec!["42".to_string()]);
+    }
+
+    #[test]
+    fn find_route_with_two_params() {
+        let mut router = RadixRouter::new();
+        router.add_route("/user/get/:user_id/:user_name", 0).unwrap();
+        let (idx, params) = router.find_route("/user/get/7/alice").unwrap();
+        assert_eq!(idx, 0);
+        assert_eq!(params, vec!["7".to_string(), "alice".to_string()]);
     }
 
     #[test]

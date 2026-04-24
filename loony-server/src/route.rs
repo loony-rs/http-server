@@ -328,6 +328,7 @@ mod tests {
         let sr = ServiceRequest {
             req,
             extensions: Rc::new(ext),
+            path_params: Rc::new(vec![]),
         };
 
         let c = b.call(sr);

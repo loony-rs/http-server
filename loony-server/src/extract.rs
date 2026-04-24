@@ -200,6 +200,21 @@ where
     }
 }
 
+impl<P> FromRequest for Path<P>
+where
+    P: FromPathSegments + Clone,
+{
+    type Future = Ready<Result<Path<P>, ()>>;
+
+    fn from_request(req: &ServiceRequest) -> Self::Future {
+        let values: Vec<&str> = req.path_params.iter().map(|s| s.as_str()).collect();
+        match P::from_segments(&values) {
+            Some(p) => ready(Ok(Path(p))),
+            None => ready(Err(())),
+        }
+    }
+}
+
 impl<T, P> FromRequest for (Data<T>, Path<P>)
 where
     T: Clone + Send + Sync + 'static,
@@ -212,20 +227,8 @@ where
             Some(d) => Data(d.clone()),
             None => return ready(Err(())),
         };
-        let path = match req.req.uri.as_ref() {
-            Some(p) => p.clone(),
-            None => return ready(Err(())),
-        };
-
-        // Collect non-empty segments and skip the scope prefix segments.
-        // The scope prefix length is determined by the route name stored on
-        // the service; for now we drop the first two segments (scope + empty
-        // leading slash artefact).  Step 4 will make this robust.
-        let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-        if segments.len() < 2 {
-            return ready(Err(()));
-        }
-        match P::from_segments(&segments[2..]) {
+        let values: Vec<&str> = req.path_params.iter().map(|s| s.as_str()).collect();
+        match P::from_segments(&values) {
             Some(p) => ready(Ok((data, Path(p)))),
             None => ready(Err(())),
         }

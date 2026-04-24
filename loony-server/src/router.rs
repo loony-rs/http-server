@@ -36,13 +36,10 @@ impl AllRouteServices {
         self.route.add_route(path, index)
     }
 
-    pub fn find_route(&self, path: &str) -> Option<Rc<RefCell<FinalRouteService>>> {
-        let res = self.route.find_route(path);
-        if let Some(res) = res {
-            let service = Rc::clone(&self.services[res.0]);
-            return Some(service);
-        }
-        None
+    pub fn find_route(&self, path: &str) -> Option<(Rc<RefCell<FinalRouteService>>, Vec<String>)> {
+        let (idx, params) = self.route.find_route(path)?;
+        let service = Rc::clone(&self.services[idx]);
+        Some((service, params))
     }
 }
 

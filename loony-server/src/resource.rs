@@ -130,6 +130,7 @@ mod tests {
         let service_request = ServiceRequest {
             req,
             extensions: Rc::new(ext),
+            path_params: Rc::new(vec![]),
         };
 
         let res = one.borrow_mut().call(service_request);

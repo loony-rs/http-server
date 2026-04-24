@@ -17,5 +17,5 @@ mod app;
 mod server;
 
 pub use app::App;
-pub use extract::Json;
+pub use extract::{Json, Path};
 pub use server::HttpServer;
