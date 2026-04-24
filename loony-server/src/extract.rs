@@ -310,10 +310,13 @@ where
     type Future = ExtractResponse<T, S>;
 
     fn call(&mut self, req: Self::Request) -> Self::Future {
+        // Call from_request first (borrow ends here — Ready futures capture by value,
+        // not by reference), then move req into the future without cloning.
+        let fut = T::from_request(&req);
         ExtractResponse {
-            req: req.clone(),
+            req: Some(req),
             service: self.service.clone(),
-            fut: T::from_request(&req),
+            fut,
             fut_s: None,
         }
     }
@@ -321,7 +324,8 @@ where
 
 #[pin_project]
 pub struct ExtractResponse<T: FromRequest, S: Service> {
-    req: ServiceRequest,
+    // Option so we can .take() the value in poll instead of cloning it.
+    req: Option<ServiceRequest>,
     service: S,
     #[pin]
     fut: T::Future,
@@ -344,7 +348,11 @@ where
         match fut_ready!(this.fut.poll(cx)) {
             Err(_) => Poll::Ready(Err(())),
             Ok(data) => {
-                let l = this.service.call((data, this.req.clone()));
+                // Take the request out of the Option — zero clones.
+                // Safety: req is Some on first poll of fut; take() leaves None which
+                // is never reached again because fut_s is set immediately after.
+                let req = this.req.take().unwrap();
+                let l = this.service.call((data, req));
                 self.as_mut().project().fut_s.set(Some(l));
                 self.poll(cx)
             },

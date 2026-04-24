@@ -533,26 +533,26 @@ impl HttpResponse {
     }
 
     pub fn build(self) -> String {
-        let status_line = format!("{} {}", self.version, self.status);
-
-        let headers: Vec<String> = self
-            .headers
-            .iter()
-            .map(|(k, v)| format!("{}: {}", k, v))
-            .collect();
-
-        let headers_section = if headers.is_empty() {
-            String::new()
-        } else {
-            format!("{}\r\n", headers.join("\r\n"))
-        };
-
-        let body_section = match self.body {
-            Some(body) => format!("\r\n{}", body),
-            None => String::new(),
-        };
-
-        format!("{}\r\n{}{}", status_line, headers_section, body_section)
+        let body = self.body.unwrap_or_default();
+        let header_len: usize = self.headers.iter().map(|(k, v)| k.len() + v.len() + 4).sum();
+        let capacity = 12 + self.version.to_string().len() + self.status.to_string().len()
+            + header_len
+            + 4
+            + body.len();
+        let mut out = String::with_capacity(capacity);
+        out.push_str(&self.version.to_string());
+        out.push(' ');
+        out.push_str(&self.status.to_string());
+        out.push_str("\r\n");
+        for (k, v) in &self.headers {
+            out.push_str(k);
+            out.push_str(": ");
+            out.push_str(v);
+            out.push_str("\r\n");
+        }
+        out.push_str("\r\n");
+        out.push_str(&body);
+        out
     }
 }
 

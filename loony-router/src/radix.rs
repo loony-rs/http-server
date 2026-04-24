@@ -1,9 +1,8 @@
 use crate::RouterError;
-use std::collections::HashMap;
 
 #[derive(Default)]
 pub struct RadixNode {
-    pub static_children: HashMap<String, Box<RadixNode>>,
+    pub static_children: Vec<(String, Box<RadixNode>)>,
     pub param_child: Option<(String, Box<RadixNode>)>,
     pub service_index: Option<usize>,
 }
@@ -58,13 +57,12 @@ impl RadixRouter {
                 node.param_child = Some((param_name.to_string(), Box::new(new_child)));
             }
         } else {
-            if let Some(child_node) = node.static_children.get_mut(segment) {
-                Self::add_to_node(child_node, remaining, service_index)?;
+            if let Some(pos) = node.static_children.iter().position(|(k, _)| k == segment) {
+                Self::add_to_node(&mut node.static_children[pos].1, remaining, service_index)?;
             } else {
                 let mut new_child = RadixNode::default();
                 Self::add_to_node(&mut new_child, remaining, service_index)?;
-                node.static_children
-                    .insert(segment.to_string(), Box::new(new_child));
+                node.static_children.push((segment.to_string(), Box::new(new_child)));
             }
         }
 
@@ -91,7 +89,7 @@ impl RadixRouter {
         let remaining = &segments[1..];
 
         // Try static match first
-        if let Some(child_node) = node.static_children.get(segment) {
+        if let Some((_, child_node)) = node.static_children.iter().find(|(k, _)| k == segment) {
             if let Some(service_index) = Self::find_in_node(child_node, remaining, params) {
                 return Some(service_index);
             }
