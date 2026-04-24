@@ -20,4 +20,4 @@ mod server;
 pub use app::App;
 pub use extract::{Json, Path};
 pub use middleware::{Cors, Logger, Middleware};
-pub use server::{HttpServer, ServerConfig, init_tracing};
+pub use server::{HttpServer, ServerConfig, TlsConfig, init_tracing, load_tls_config};

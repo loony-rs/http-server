@@ -434,6 +434,15 @@ impl std::error::Error for InvalidStatusCode {}
 //     }
 // }
 
+/// Strip CR and LF characters from a header name or value to prevent injection.
+fn sanitize_header_value(value: String) -> String {
+    if value.contains('\r') || value.contains('\n') {
+        value.replace('\r', "").replace('\n', "")
+    } else {
+        value
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct HttpResponse {
     version: HttpVersion,
@@ -467,7 +476,10 @@ impl HttpResponse {
         K: Into<String>,
         V: Into<String>,
     {
-        self.headers.insert(key.into(), value.into());
+        self.headers.insert(
+            sanitize_header_value(key.into()),
+            sanitize_header_value(value.into()),
+        );
         self
     }
 
@@ -477,7 +489,10 @@ impl HttpResponse {
     }
 
     pub fn with_header<K: Into<String>, V: Into<String>>(mut self, key: K, value: V) -> Self {
-        self.headers.insert(key.into(), value.into());
+        self.headers.insert(
+            sanitize_header_value(key.into()),
+            sanitize_header_value(value.into()),
+        );
         self
     }
 
@@ -534,7 +549,16 @@ impl HttpResponse {
 
     pub fn build(self) -> String {
         let body = self.body.unwrap_or_default();
-        let header_len: usize = self.headers.iter().map(|(k, v)| k.len() + v.len() + 4).sum();
+
+        // Enforce correct Content-Length: remove any caller-provided value and
+        // re-insert the actual body length (or omit it for empty bodies).
+        let mut headers = self.headers;
+        headers.retain(|k, _| !k.eq_ignore_ascii_case("content-length"));
+        if !body.is_empty() {
+            headers.insert("Content-Length".to_string(), body.len().to_string());
+        }
+
+        let header_len: usize = headers.iter().map(|(k, v)| k.len() + v.len() + 4).sum();
         let capacity = 12 + self.version.to_string().len() + self.status.to_string().len()
             + header_len
             + 4
@@ -544,7 +568,7 @@ impl HttpResponse {
         out.push(' ');
         out.push_str(&self.status.to_string());
         out.push_str("\r\n");
-        for (k, v) in &self.headers {
+        for (k, v) in &headers {
             out.push_str(k);
             out.push_str(": ");
             out.push_str(v);

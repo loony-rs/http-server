@@ -14,13 +14,15 @@ use crate::{
 };
 
 use loony_service::{IntoServiceFactory, Service, ServiceFactory};
+use rustls_pemfile;
 use socket2::{Domain, Socket, Type};
 use std::{
     cell::RefCell,
-    io,
+    io::{self, BufReader},
     marker::PhantomData,
     net::{TcpListener, TcpStream},
     rc::Rc,
+    sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::net::TcpListener as TokioListener;
@@ -37,6 +39,7 @@ struct Run {
     listener: TokioListener,
     read_timeout: Duration,
     write_timeout: Duration,
+    tls_acceptor: Option<Arc<rustls::ServerConfig>>,
 }
 
 impl Run {
@@ -71,7 +74,11 @@ impl Run {
             .map(|a| a.to_string())
             .unwrap_or_else(|_| "unknown".to_string());
 
-        let mut connection = Connection::new(stream, self.read_timeout, self.write_timeout)?;
+        let mut connection = if let Some(ref tls) = self.tls_acceptor {
+            Connection::new_tls(stream, Arc::clone(tls), self.read_timeout, self.write_timeout)?
+        } else {
+            Connection::new(stream, self.read_timeout, self.write_timeout)?
+        };
 
         loop {
             let bytes = match connection.read_http_response() {
@@ -289,6 +296,7 @@ where
     app: F,
     read_timeout: Duration,
     write_timeout: Duration,
+    tls_config: Option<Arc<rustls::ServerConfig>>,
     _p: PhantomData<T>,
 }
 
@@ -298,11 +306,17 @@ where
     I: IntoServiceFactory<T>,
     T: ServiceFactory<Request = (), Config = (), Service = AppHttpService>,
 {
-    fn new(app: F, read_timeout: Duration, write_timeout: Duration) -> Self {
+    fn new(
+        app: F,
+        read_timeout: Duration,
+        write_timeout: Duration,
+        tls_config: Option<Arc<rustls::ServerConfig>>,
+    ) -> Self {
         ServeHttpService {
             app,
             read_timeout,
             write_timeout,
+            tls_config,
             _p: PhantomData,
         }
     }
@@ -332,6 +346,7 @@ where
             listener: tokio_listener,
             read_timeout: self.read_timeout,
             write_timeout: self.write_timeout,
+            tls_acceptor: self.tls_config,
         }
         .run()
         .await;
@@ -399,6 +414,11 @@ where
         self
     }
 
+    pub fn tls(mut self, config: TlsConfig) -> Self {
+        self.config.tls = Some(config);
+        self
+    }
+
     /// Bind the socket and start accepting connections.
     ///
     /// Each worker gets its own OS thread running a `current_thread` Tokio
@@ -420,8 +440,19 @@ where
         let read_timeout = self.config.read_timeout;
         let write_timeout = self.config.write_timeout;
 
+        let tls_acceptor = if let Some(ref tls_cfg) = self.config.tls {
+            Some(load_tls_config(&tls_cfg.cert_path, &tls_cfg.key_path).map_err(|e| {
+                ServerError::ConfigError {
+                    message: format!("TLS configuration error: {e}"),
+                }
+            })?)
+        } else {
+            None
+        };
+
         for i in 0..workers {
             let app = self.app.clone();
+            let tls = tls_acceptor.clone();
 
             let socket = Socket::new(Domain::IPV4, Type::STREAM, None)?;
             socket.set_reuse_port(true)?;
@@ -441,7 +472,7 @@ where
                         .expect("failed to build worker runtime");
                     let local = tokio::task::LocalSet::new();
                     local.spawn_local(async move {
-                        ServeHttpService::new(app, read_timeout, write_timeout)
+                        ServeHttpService::new(app, read_timeout, write_timeout, tls)
                             .run(listener)
                             .await;
                     });
@@ -487,6 +518,51 @@ pub fn init_tracing() {
 }
 
 // ---------------------------------------------------------------------------
+// TLS configuration
+// ---------------------------------------------------------------------------
+
+/// Paths to a PEM-encoded certificate chain and private key for HTTPS.
+///
+/// # Example
+/// ```rust,ignore
+/// HttpServer::new(|| App::new().routes(routes))
+///     .tls(TlsConfig { cert_path: "cert.pem".into(), key_path: "key.pem".into() })
+///     .bind(443)
+///     .run()
+///     .await
+/// ```
+#[derive(Debug, Clone)]
+pub struct TlsConfig {
+    pub cert_path: String,
+    pub key_path: String,
+}
+
+/// Load a `rustls::ServerConfig` from PEM certificate and key files.
+pub fn load_tls_config(cert_path: &str, key_path: &str) -> io::Result<Arc<rustls::ServerConfig>> {
+    let cert_file = std::fs::File::open(cert_path)
+        .map_err(|e| io::Error::new(io::ErrorKind::NotFound, format!("cert file: {e}")))?;
+    let key_file = std::fs::File::open(key_path)
+        .map_err(|e| io::Error::new(io::ErrorKind::NotFound, format!("key file: {e}")))?;
+
+    let certs: Vec<_> = rustls_pemfile::certs(&mut BufReader::new(cert_file))
+        .collect::<Result<_, _>>()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("cert parse: {e}")))?;
+
+    let key = rustls_pemfile::private_key(&mut BufReader::new(key_file))
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("key parse: {e}")))?
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "no private key found in key file")
+        })?;
+
+    let config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("TLS config: {e}")))?;
+
+    Ok(Arc::new(config))
+}
+
+// ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
@@ -497,6 +573,7 @@ pub struct ServerConfig {
     pub max_connections: usize,
     pub read_timeout: Duration,
     pub write_timeout: Duration,
+    pub tls: Option<TlsConfig>,
 }
 
 impl Default for ServerConfig {
@@ -510,6 +587,7 @@ impl Default for ServerConfig {
             max_connections: 1000,
             read_timeout: Duration::from_secs(30),
             write_timeout: Duration::from_secs(30),
+            tls: None,
         }
     }
 }

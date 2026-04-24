@@ -1,13 +1,61 @@
 use std::{
     io::{self, ErrorKind, Read, Write},
     net::{Shutdown, SocketAddr, TcpStream},
+    sync::Arc,
     time::Duration,
 };
 
-/// Represents a single TCP connection with buffered I/O.
-pub struct Connection {
-    stream: TcpStream,
-    buffer: Vec<u8>,
+const MAX_HEADER_BYTES: usize = 16 * 1024;
+const MAX_BODY_BYTES: usize = 100 * 1024 * 1024;
+
+// ---------------------------------------------------------------------------
+// RawStream — abstracts plain TCP vs TLS
+// ---------------------------------------------------------------------------
+
+enum RawStream {
+    Tcp(TcpStream),
+    Tls(Box<rustls::StreamOwned<rustls::ServerConnection, TcpStream>>),
+}
+
+impl Read for RawStream {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            RawStream::Tcp(s) => s.read(buf),
+            RawStream::Tls(s) => s.read(buf),
+        }
+    }
+}
+
+impl Write for RawStream {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            RawStream::Tcp(s) => s.write(buf),
+            RawStream::Tls(s) => s.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            RawStream::Tcp(s) => s.flush(),
+            RawStream::Tls(s) => s.flush(),
+        }
+    }
+}
+
+impl RawStream {
+    fn peer_addr(&self) -> io::Result<SocketAddr> {
+        match self {
+            RawStream::Tcp(s) => s.peer_addr(),
+            RawStream::Tls(s) => s.get_ref().peer_addr(),
+        }
+    }
+
+    fn shutdown(&self) -> io::Result<()> {
+        match self {
+            RawStream::Tcp(s) => s.shutdown(Shutdown::Both),
+            RawStream::Tls(s) => s.get_ref().shutdown(Shutdown::Both),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -16,20 +64,21 @@ pub struct Connection {
 
 #[derive(Debug)]
 enum BodyTransfer {
-    /// Body size is known; value is the exact byte count.
     ContentLength(usize),
-    /// Body is sent as a sequence of sized chunks.
     Chunked,
-    /// No body expected (GET, DELETE, HEAD, etc.).
     None,
 }
 
+// ---------------------------------------------------------------------------
+// Connection
+// ---------------------------------------------------------------------------
+
+pub struct Connection {
+    stream: RawStream,
+    buffer: Vec<u8>,
+}
+
 impl Connection {
-    /// Create a new `Connection` from a `TcpStream`.
-    ///
-    /// `read_timeout` controls both the initial header read and the idle
-    /// wait between keep-alive requests.  `write_timeout` bounds each
-    /// response write.  Both come from `ServerConfig`.
     pub fn new(
         stream: TcpStream,
         read_timeout: Duration,
@@ -39,7 +88,24 @@ impl Connection {
         stream.set_write_timeout(Some(write_timeout))?;
         stream.set_nodelay(true)?;
         Ok(Self {
-            stream,
+            stream: RawStream::Tcp(stream),
+            buffer: vec![0u8; 8192],
+        })
+    }
+
+    pub fn new_tls(
+        stream: TcpStream,
+        tls_config: Arc<rustls::ServerConfig>,
+        read_timeout: Duration,
+        write_timeout: Duration,
+    ) -> io::Result<Self> {
+        stream.set_read_timeout(Some(read_timeout))?;
+        stream.set_write_timeout(Some(write_timeout))?;
+        stream.set_nodelay(true)?;
+        let conn = rustls::ServerConnection::new(tls_config)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        Ok(Self {
+            stream: RawStream::Tls(Box::new(rustls::StreamOwned::new(conn, stream))),
             buffer: vec![0u8; 8192],
         })
     }
@@ -48,12 +114,6 @@ impl Connection {
     // HTTP framing: read a complete request (headers + body)
     // ---------------------------------------------------------------------------
 
-    /// Read one complete HTTP request from the socket.
-    ///
-    /// Returns raw bytes containing the request line, all headers, the blank
-    /// line, and the decoded body.  For chunked bodies the chunk framing is
-    /// stripped; callers always see a contiguous body byte range starting
-    /// immediately after the final `\r\n\r\n`.
     pub fn read_http_response(&mut self) -> io::Result<Vec<u8>> {
         // Phase 1 — read until the blank line that terminates headers.
         let mut raw: Vec<u8> = Vec::new();
@@ -66,45 +126,46 @@ impl Connection {
                 ));
             }
             raw.extend_from_slice(&self.buffer[..n]);
+            if raw.len() > MAX_HEADER_BYTES {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    format!("request headers exceed {MAX_HEADER_BYTES} byte limit"),
+                ));
+            }
             if let Some(pos) = find_headers_end(&raw) {
-                break pos; // pos is the index of the first body byte
+                break pos;
             }
         };
 
         // Phase 2 — read the body according to the transfer encoding.
         match detect_body_transfer(&raw[..headers_end]) {
             BodyTransfer::ContentLength(len) => {
+                if len > MAX_BODY_BYTES {
+                    return Err(io::Error::new(
+                        ErrorKind::InvalidData,
+                        format!("Content-Length {len} exceeds {MAX_BODY_BYTES} byte limit"),
+                    ));
+                }
                 let already_buffered = raw.len() - headers_end;
-
                 if len > already_buffered {
-                    // Need more bytes from the socket.
                     let remaining = len - already_buffered;
                     let old_len = raw.len();
                     raw.resize(old_len + remaining, 0);
                     self.stream.read_exact(&mut raw[old_len..])?;
                 }
-
-                // Trim any bytes read beyond Content-Length (guards against
-                // requests where one syscall pulled in the next request's
-                // bytes — important for keep-alive, Step 6).
                 raw.truncate(headers_end + len);
                 Ok(raw)
             },
 
             BodyTransfer::Chunked => {
-                // Bytes already past the header boundary may be partial chunk data.
                 let partial_body = raw[headers_end..].to_vec();
                 let decoded_body = self.decode_chunked_body(partial_body)?;
-
-                // Replace raw with: headers section + decoded body.
                 raw.truncate(headers_end);
                 raw.extend_from_slice(&decoded_body);
                 Ok(raw)
             },
 
             BodyTransfer::None => {
-                // Discard anything read beyond the headers (shouldn't exist
-                // for GET/DELETE, but be defensive).
                 raw.truncate(headers_end);
                 Ok(raw)
             },
@@ -115,16 +176,11 @@ impl Connection {
     // Chunked transfer-encoding decoder
     // ---------------------------------------------------------------------------
 
-    /// Read and decode a chunked body.
-    ///
-    /// `initial` contains bytes already pulled from the socket after the
-    /// header boundary.  The method reads additional data as needed.
     fn decode_chunked_body(&mut self, initial: Vec<u8>) -> io::Result<Vec<u8>> {
         let mut body: Vec<u8> = Vec::new();
         let mut buf = initial;
 
         loop {
-            // Ensure we have at least a chunk-size line (ends with \r\n).
             let line_end = loop {
                 if let Some(pos) = find_crlf(&buf) {
                     break pos;
@@ -139,7 +195,6 @@ impl Connection {
                 buf.extend_from_slice(&self.buffer[..n]);
             };
 
-            // Parse the chunk size (hex), ignoring optional chunk-extensions.
             let size_line = std::str::from_utf8(&buf[..line_end])
                 .map_err(|_| io::Error::new(ErrorKind::InvalidData, "non-UTF8 chunk size line"))?;
             let hex_part = size_line.split(';').next().unwrap_or("").trim();
@@ -150,15 +205,12 @@ impl Connection {
                 )
             })?;
 
-            buf.drain(..line_end + 2); // consume size line + CRLF
+            buf.drain(..line_end + 2);
 
             if chunk_size == 0 {
-                // Terminal chunk — trailers (if any) and the final CRLF are
-                // discarded.  We don't support trailers in Step 3.
                 break;
             }
 
-            // Read exactly chunk_size bytes + 2 (the trailing CRLF).
             let needed = chunk_size + 2;
             while buf.len() < needed {
                 let n = self.stream.read(&mut self.buffer)?;
@@ -172,7 +224,13 @@ impl Connection {
             }
 
             body.extend_from_slice(&buf[..chunk_size]);
-            buf.drain(..needed); // consume data + trailing CRLF
+            if body.len() > MAX_BODY_BYTES {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    format!("chunked body exceeds {MAX_BODY_BYTES} byte limit"),
+                ));
+            }
+            buf.drain(..needed);
         }
 
         Ok(body)
@@ -182,7 +240,6 @@ impl Connection {
     // Low-level I/O helpers
     // ---------------------------------------------------------------------------
 
-    /// Read exactly `buf.len()` bytes, blocking until all are available.
     pub fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let mut total = 0;
         while total < buf.len() {
@@ -202,7 +259,6 @@ impl Connection {
         Ok(total)
     }
 
-    /// Write all bytes from `data` to the socket.
     pub fn write(&mut self, data: &[u8]) -> io::Result<()> {
         let mut written = 0;
         while written < data.len() {
@@ -221,23 +277,19 @@ impl Connection {
         self.stream.flush()
     }
 
-    /// Write a UTF-8 string to the connection.
     pub fn write_str(&mut self, s: &str) -> io::Result<()> {
         self.write(s.as_bytes())
     }
 
-    /// Flush any buffered writes.
     pub fn flush(&mut self) -> io::Result<()> {
         self.stream.flush()
     }
 
-    /// Gracefully shut down the connection.
     pub fn close(mut self) -> io::Result<()> {
         self.flush()?;
-        self.stream.shutdown(Shutdown::Both)
+        self.stream.shutdown()
     }
 
-    /// Returns the remote socket address, useful for logging.
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
         self.stream.peer_addr()
     }
@@ -245,7 +297,7 @@ impl Connection {
 
 impl Drop for Connection {
     fn drop(&mut self) {
-        let _ = self.stream.shutdown(Shutdown::Both);
+        let _ = self.stream.shutdown();
     }
 }
 
@@ -253,23 +305,16 @@ impl Drop for Connection {
 // Private helpers
 // ---------------------------------------------------------------------------
 
-/// Find the index of the first byte *after* the `\r\n\r\n` header terminator.
 fn find_headers_end(data: &[u8]) -> Option<usize> {
     data.windows(4)
         .position(|w| w == b"\r\n\r\n")
         .map(|pos| pos + 4)
 }
 
-/// Find the position of the first `\r\n` in `data`.
 fn find_crlf(data: &[u8]) -> Option<usize> {
     data.windows(2).position(|w| w == b"\r\n")
 }
 
-/// Determine how the request body is framed.
-///
-/// Reads the raw header bytes (up to the blank line) and looks for
-/// `Transfer-Encoding` and `Content-Length`.  `Transfer-Encoding: chunked`
-/// takes priority over `Content-Length` per RFC 7230 §3.3.3 rule 3.
 fn detect_body_transfer(headers: &[u8]) -> BodyTransfer {
     let text = match std::str::from_utf8(headers) {
         Ok(s) => s,
@@ -281,7 +326,6 @@ fn detect_body_transfer(headers: &[u8]) -> BodyTransfer {
     for line in text.lines() {
         let lower = line.to_lowercase();
         if lower.starts_with("transfer-encoding:") && lower.contains("chunked") {
-            // Chunked takes priority; stop scanning.
             return BodyTransfer::Chunked;
         }
         if lower.starts_with("content-length:") {
@@ -306,11 +350,8 @@ fn detect_body_transfer(headers: &[u8]) -> BodyTransfer {
 mod tests {
     use super::*;
 
-    // --- find_headers_end ---
-
     #[test]
     fn headers_end_found() {
-        // "GET / HTTP/1.1\r\nHost: x\r\n\r\n" → 27 bytes before "body"
         let data = b"GET / HTTP/1.1\r\nHost: x\r\n\r\nbody";
         assert_eq!(find_headers_end(data), Some(27));
     }
@@ -320,8 +361,6 @@ mod tests {
         let data = b"GET / HTTP/1.1\r\nHost: x\r\n";
         assert_eq!(find_headers_end(data), None);
     }
-
-    // --- detect_body_transfer ---
 
     #[test]
     fn detect_content_length() {
@@ -335,20 +374,14 @@ mod tests {
     #[test]
     fn detect_chunked() {
         let headers = b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n";
-        assert!(matches!(
-            detect_body_transfer(headers),
-            BodyTransfer::Chunked
-        ));
+        assert!(matches!(detect_body_transfer(headers), BodyTransfer::Chunked));
     }
 
     #[test]
     fn detect_chunked_overrides_content_length() {
         let headers =
             b"POST / HTTP/1.1\r\nContent-Length: 99\r\nTransfer-Encoding: chunked\r\n\r\n";
-        assert!(matches!(
-            detect_body_transfer(headers),
-            BodyTransfer::Chunked
-        ));
+        assert!(matches!(detect_body_transfer(headers), BodyTransfer::Chunked));
     }
 
     #[test]
@@ -362,8 +395,6 @@ mod tests {
         let headers = b"POST / HTTP/1.1\r\nContent-Length: 0\r\n\r\n";
         assert!(matches!(detect_body_transfer(headers), BodyTransfer::None));
     }
-
-    // --- HttpRequest body extraction ---
 
     #[test]
     fn request_parse_extracts_body() {
@@ -383,8 +414,6 @@ mod tests {
         req.parse(raw).unwrap();
         assert!(req.body.is_none());
     }
-
-    // --- find_crlf ---
 
     #[test]
     fn find_crlf_found() {
