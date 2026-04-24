@@ -14,7 +14,7 @@ use crate::{
     ServiceResponse,
     AppServiceFactory,
   }};
-use async_std::task::block_on;
+use futures::executor::block_on;
 use futures::{Future, FutureExt};
 use loony_service::{ServiceFactory, Service};
 
@@ -110,7 +110,7 @@ mod tests {
     use crate::service::AppServiceFactory;
     use crate::service::ServiceRequest;
     use crate::resource::Resource;
-    use async_std::task::block_on;
+    use futures::executor::block_on;
     use loony_service::Service;
     use std::rc::Rc;
     use crate::route::RouteServices;

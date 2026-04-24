@@ -1,7 +1,7 @@
 use std::{
     cell::RefCell, future::Future, pin::Pin, rc::Rc, task::{Context, Poll}
 };
-use async_std::task::block_on;
+use futures::executor::block_on;
 use loony_service::{
     Service,
     ServiceFactory

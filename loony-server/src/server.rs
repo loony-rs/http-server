@@ -1,159 +1,225 @@
-use crate::{router::AllRouteServices, connection::Connection, error::*, response::HttpResponse};
-use crate::{app_service::AppHttpService, extensions::Extensions, request::HttpRequest, resource::FinalRouteService, service::ServiceRequest};
+use crate::{
+    connection::Connection,
+    error::*,
+    response::HttpResponse,
+    router::AllRouteServices,
+};
+use crate::{
+    app_service::AppHttpService,
+    extensions::Extensions,
+    request::HttpRequest,
+    resource::FinalRouteService,
+    service::ServiceRequest,
+};
 
-use std::net::TcpListener;
-use async_std::task::block_on;
-use socket2::{Socket, Domain, Type};
+use std::{
+    cell::RefCell,
+    marker::PhantomData,
+    net::{TcpListener, TcpStream},
+    rc::Rc,
+    time::Duration,
+};
+use socket2::{Domain, Socket, Type};
+use tokio::net::TcpListener as TokioListener;
 use loony_service::{IntoServiceFactory, Service, ServiceFactory};
-use std::{cell::RefCell, marker::PhantomData, net::TcpStream, rc::Rc, time::Duration};
 
-pub struct Run {
-    // routes: AHashMap<String, Rc<RefCell<FinalRouteService>>>,
+// ---------------------------------------------------------------------------
+// Run — owns the live router and accepts connections
+// ---------------------------------------------------------------------------
+
+struct Run {
     extensions: Rc<Extensions>,
     route: AllRouteServices,
-    listener: std::net::TcpListener,
+    listener: TokioListener,
 }
 
 impl Run {
-    fn run(&self) {
+    /// Accept loop — runs forever on the current task.
+    ///
+    /// `accept().await` yields control to the tokio scheduler between
+    /// connections, so other local tasks can make progress.
+    async fn run(self) {
         loop {
-            let (stream, _) = self.listener.accept().unwrap();            
-            self.handle_connection(stream).unwrap();
+            match self.listener.accept().await {
+                Ok((tokio_stream, _addr)) => {
+                    // Convert to std TcpStream for the synchronous Connection
+                    // type. Step 5 replaces this with a fully async tokio I/O
+                    // path so the conversion goes away.
+                    match tokio_stream.into_std() {
+                        Ok(std_stream) => {
+                            if let Err(e) = self.handle_connection(std_stream).await {
+                                eprintln!("connection error: {e}");
+                            }
+                        }
+                        Err(e) => eprintln!("stream conversion error: {e}"),
+                    }
+                }
+                Err(e) => eprintln!("accept error: {e}"),
+            }
         }
     }
 
-    /// Handles an individual TCP connection
-    fn handle_connection(
-        &self, 
-        stream: TcpStream,
-    ) -> Result<(), ServerError> {
+    /// Read the request, dispatch it, write the response.
+    ///
+    /// The sync I/O calls (`Connection::new`, `read_http_response`,
+    /// `write_str`, `close`) block the thread. This is the known limitation
+    /// called out in the Step 1 tradeoffs and is fixed in Step 5.
+    async fn handle_connection(&self, stream: TcpStream) -> Result<(), ServerError> {
         let mut connection = Connection::new(stream)?;
         let bytes_read = connection.read_http_response()?;
-        let request = self.request(&bytes_read)?;
-        let response = self.response(request)?;
+        let request = self.parse_request(&bytes_read)?;
+        let response = self.dispatch(request).await?;
         connection.write_str(&response)?;
         connection.close()?;
         Ok(())
     }
 
-
-    /// Parses raw HTTP request data into a structured Request object
-    fn request(&self, buffer: &[u8]) -> Result<HttpRequest, ServerError> {
+    /// Parse raw bytes into a structured `HttpRequest`.
+    fn parse_request(&self, buffer: &[u8]) -> Result<HttpRequest, ServerError> {
         let mut request = HttpRequest::new();
-        let _ = request.parse(buffer).unwrap();
+        let _ = request.parse(buffer).unwrap(); // unwrap addressed in Step 2
         Ok(request.into())
     }
 
-    /// Handles an HTTP request and generates an appropriate response
-    fn response(
-        &self,
-        request: HttpRequest,
-    ) -> Result<String, ServerError> {
-        let path = request.uri.as_ref()
-            .ok_or(HandlerError::MissingUri)?;
+    /// Route the request and produce a serialised HTTP response string.
+    async fn dispatch(&self, request: HttpRequest) -> Result<String, ServerError> {
+        let path = request
+            .uri
+            .as_ref()
+            .ok_or(HandlerError::MissingUri)?
+            .clone();
+
         if let Some(service) = self.route.find_route(&path) {
-            self.execute_service(service.clone(), request)
+            self.call_service(service, request).await
         } else {
             Ok(HttpResponse::bad_request().build())
         }
     }
 
-     /// Executes the appropriate service for the request
-    fn execute_service(
+    /// Call the matched service and await its future on the tokio runtime.
+    ///
+    /// `service.borrow_mut().call(...)` creates the future and immediately
+    /// drops the `RefMut` borrow (at the statement semicolon). The returned
+    /// `Pin<Box<dyn Future>>` does not borrow from the `RefCell`, so it is
+    /// safe to `.await` after the borrow is released.
+    async fn call_service(
         &self,
         service: Rc<RefCell<FinalRouteService>>,
-        request: HttpRequest
+        request: HttpRequest,
     ) -> Result<String, ServerError> {
         let service_request = ServiceRequest {
             req: request,
             extensions: self.extensions.clone(),
         };
 
-        let mut service_clone: Rc<RefCell<FinalRouteService>> = Rc::clone(&service);
-        let future = service_clone.call(service_request);
-        
-        match block_on(future) {
-            Ok(response) => {
-                Ok(response.0)
-            }
-            Err(_) => {
-                Ok(HttpResponse::internal_server_error().build())
-            }
+        // The RefMut is dropped at the semicolon; the future outlives the borrow.
+        let future = service.borrow_mut().call(service_request);
+
+        match future.await {
+            Ok(response) => Ok(response.0),
+            Err(_) => Ok(HttpResponse::internal_server_error().build()),
         }
     }
-
 }
-pub struct ServeHttpService<F, I, T> 
-where F: Fn() -> I + Send + Clone + 'static,
-I: IntoServiceFactory<T>,
-T: ServiceFactory 
+
+// ---------------------------------------------------------------------------
+// ServeHttpService — initialises the app and hands off to Run
+// ---------------------------------------------------------------------------
+
+struct ServeHttpService<F, I, T>
+where
+    F: Fn() -> I + Send + Clone + 'static,
+    I: IntoServiceFactory<T>,
+    T: ServiceFactory,
 {
     app: F,
-    _p: PhantomData<T>
+    _p: PhantomData<T>,
 }
 
-impl<F, I, T> ServeHttpService<F, I, T> 
-where F: Fn() -> I + Send + Clone + 'static,
+impl<F, I, T> ServeHttpService<F, I, T>
+where
+    F: Fn() -> I + Send + Clone + 'static,
     I: IntoServiceFactory<T>,
-    T: ServiceFactory<Request=(), Config = (), Service = AppHttpService>,
+    T: ServiceFactory<Request = (), Config = (), Service = AppHttpService>,
 {
-    pub fn new(app: F) -> Self {
+    fn new(app: F) -> Self {
         ServeHttpService { app, _p: PhantomData }
     }
-    
-    pub fn run(&mut self, listener: std::net::TcpListener) {
-        let (extensions, route) = self.new_service().unwrap();
+
+    /// Build services, then hand the live router to `Run`.
+    pub async fn run(mut self, std_listener: TcpListener) {
+        let (extensions, route) = match self.new_service().await {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("service init failed: {e}");
+                return;
+            }
+        };
+
+        let tokio_listener = match TokioListener::from_std(std_listener) {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("listener setup failed: {e}");
+                return;
+            }
+        };
+
         Run {
-            route,
             extensions: Rc::new(extensions),
-            listener,
-        }.run();
+            route,
+            listener: tokio_listener,
+        }
+        .run()
+        .await;
     }
 
-    // /// Starts the server and initializes all services
-    fn new_service(&mut self) ->  Result<(
-        // AHashMap<String, Rc<RefCell<FinalRouteService>>>, 
-        Extensions, 
-        AllRouteServices
-    ), ServerError>
-    {
+    /// Initialise the app factory.
+    ///
+    /// Uses `.await` — the future is already `Ready` (see `AppFactory`), so
+    /// this resolves immediately. The route `register()` calls that happen
+    /// inside `AppFactory::new_service` use `futures::executor::block_on`
+    /// (see route.rs / resource.rs), which is safe for pure-computation
+    /// futures that do not touch tokio primitives.
+    async fn new_service(
+        &mut self,
+    ) -> Result<(Extensions, AllRouteServices), ServerError> {
         let app = (self.app)();
         let app_factory = app.into_factory();
-        let app_service = app_factory.new_service(());
-        
-        let http_service: Result<AppHttpService, T::InitError> = block_on(app_service);
-        
-        match http_service {
-            Ok(service) => {
-                Ok((service.extensions, service.route))
-            }
-            Err(_) => {
-                Err(ServerError::service_init_error(String::from("Failed to initialize app services.")))
-            }
+        let app_service_future = app_factory.new_service(());
+
+        match app_service_future.await {
+            Ok(service) => Ok((service.extensions, service.route)),
+            Err(_) => Err(ServerError::service_init_error(
+                "failed to initialise app services".to_string(),
+            )),
         }
     }
-
-
 }
 
-pub struct HttpServer<F, I, T> 
-where F: Fn() -> I + Send + Clone + 'static,
-I: IntoServiceFactory<T>,
-T: ServiceFactory,
+// ---------------------------------------------------------------------------
+// HttpServer — public API
+// ---------------------------------------------------------------------------
+
+pub struct HttpServer<F, I, T>
+where
+    F: Fn() -> I + Send + Clone + 'static,
+    I: IntoServiceFactory<T>,
+    T: ServiceFactory,
 {
     app: F,
     config: ServerConfig,
     port: i32,
-    _p: PhantomData<T>
+    _p: PhantomData<T>,
 }
 
-impl<F, I, T> HttpServer<F, I, T> 
-where F: Fn() -> I + Send + Clone + 'static,
+impl<F, I, T> HttpServer<F, I, T>
+where
+    F: Fn() -> I + Send + Clone + 'static,
     I: IntoServiceFactory<T>,
-    T: ServiceFactory<Request=(), Config = (), Service = AppHttpService>,
+    T: ServiceFactory<Request = (), Config = (), Service = AppHttpService>,
 {
     pub fn new(app: F) -> Self {
-        Self { 
+        Self {
             app,
             config: ServerConfig::default(),
             port: 2443,
@@ -161,7 +227,6 @@ where F: Fn() -> I + Send + Clone + 'static,
         }
     }
 
-    /// Configures the server with custom settings
     pub fn with_config(mut self, config: ServerConfig) -> Self {
         self.config = config;
         self
@@ -171,37 +236,49 @@ where F: Fn() -> I + Send + Clone + 'static,
         self.port = port;
         self
     }
-    /// Runs the HTTP server and starts accepting connections
+
+    /// Bind the socket and start accepting connections.
     ///
-    /// This method blocks the current thread and runs the server indefinitely
+    /// Uses a `LocalSet` so that the worker task (which holds `Rc<...>`
+    /// types that are `!Send`) can be scheduled on the current thread
+    /// without requiring `Arc` or `Send` bounds.
     ///
-    /// # Panics
-    ///
-    /// Panics if the server fails to start or service initialization fails
-    pub async fn run(&mut self) {
-        let mut servers = Vec::new();
+    /// Step 5 replaces the `0..1` loop with a configurable worker count,
+    /// each pinned to its own OS thread via `tokio::task::spawn_blocking` +
+    /// a dedicated `LocalSet`.
+    pub async fn run(self) {
+        let local = tokio::task::LocalSet::new();
+
         for _ in 0..1 {
             let app = self.app.clone();
+            let port = self.port;
+
             let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
             socket.set_reuse_port(true).unwrap();
-            socket.bind(&format!("127.0.0.1:{}", self.port).parse::<std::net::SocketAddr>().unwrap().into()).unwrap();
+            socket
+                .bind(
+                    &format!("127.0.0.1:{port}")
+                        .parse::<std::net::SocketAddr>()
+                        .unwrap()
+                        .into(),
+                )
+                .unwrap();
             socket.listen(128).unwrap();
             let listener: TcpListener = socket.into();
 
-            let handle = tokio::spawn(async move {
-                let mut t =ServeHttpService::new(app);
-                t.run(listener);
+            local.spawn_local(async move {
+                ServeHttpService::new(app).run(listener).await;
             });
-            servers.push(handle);
         }
-            
-        // Run all servers
-        futures_util::future::join_all(servers).await;
-    }
 
+        local.await;
+    }
 }
 
-/// Server configuration
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub port: u16,
