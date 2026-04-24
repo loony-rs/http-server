@@ -1,40 +1,34 @@
 use std::{
-  pin::Pin,
-  task::{Context, Poll},
+    pin::Pin,
+    task::{Context, Poll},
 };
 
 use crate::{
-  route::RouteServices, 
-  route::{
-    BoxedRouteService, 
-    Route, 
-    RouteFutureService
-  }, service::{
-    ServiceRequest, 
-    ServiceResponse,
-    AppServiceFactory,
-  }};
+    route::RouteServices,
+    route::{BoxedRouteService, Route, RouteFutureService},
+    service::{AppServiceFactory, ServiceRequest, ServiceResponse},
+};
 use futures::executor::block_on;
 use futures::{Future, FutureExt};
-use loony_service::{ServiceFactory, Service};
+use loony_service::{Service, ServiceFactory};
 
 pub struct Resource {
-  scope: String,
-  route: Route,
+    scope: String,
+    route: Route,
 }
 
 impl Resource {
-  pub fn new(scope: String) -> Self {
-    Resource {
-      scope,
-      route: Route::new(""),
+    pub fn new(scope: String) -> Self {
+        Resource {
+            scope,
+            route: Route::new(""),
+        }
     }
-  }
 
-  pub fn route(mut self, route: Route) -> Self {
-    self.route = route;
-    self
-  }
+    pub fn route(mut self, route: Route) -> Self {
+        self.route = route;
+        self
+    }
 }
 
 impl ServiceFactory for Resource {
@@ -45,28 +39,28 @@ impl ServiceFactory for Resource {
     type Future = FinalFutureRouteService;
     type InitError = ();
     type Config = ();
- 
+
     fn new_service(&self, _: ()) -> Self::Future {
         let mut route_name = format!("{}", &self.scope);
         route_name.push_str(&self.route.path);
         let fut = self.route.new_service(());
-        FinalFutureRouteService {
-          route_name,
-          fut,
-        }
+        FinalFutureRouteService { route_name, fut }
     }
 }
 
 impl AppServiceFactory for Resource {
-  fn register(&mut self, config: &mut RouteServices) {
-    let a = self.new_service(());
-    match block_on(a) {
-        Ok(b) => config.service(b),
-        Err(()) => {
-            eprintln!("warning: failed to build service for resource '{}'", self.scope);
+    fn register(&mut self, config: &mut RouteServices) {
+        let a = self.new_service(());
+        match block_on(a) {
+            Ok(b) => config.service(b),
+            Err(()) => {
+                eprintln!(
+                    "warning: failed to build service for resource '{}'",
+                    self.scope
+                );
+            },
         }
     }
-  }
 }
 
 #[pin_project::pin_project]
@@ -85,7 +79,7 @@ impl Service for FinalRouteService {
     type Request = ServiceRequest;
     type Response = ServiceResponse;
     type Error = ();
-    type Future = Pin<Box<dyn Future<Output=Result<ServiceResponse, ()>>>>;
+    type Future = Pin<Box<dyn Future<Output = Result<ServiceResponse, ()>>>>;
 
     fn call(&mut self, req: Self::Request) -> Self::Future {
         self.service.call(req).boxed_local()
@@ -106,19 +100,18 @@ impl Future for FinalFutureRouteService {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::extensions::Extensions;
     use crate::request::HttpRequest;
+    use crate::resource::Resource;
     use crate::route::Route;
+    use crate::route::RouteServices;
     use crate::service::AppServiceFactory;
     use crate::service::ServiceRequest;
-    use crate::resource::Resource;
     use futures::executor::block_on;
     use loony_service::Service;
     use std::rc::Rc;
-    use crate::route::RouteServices;
 
     async fn index(_: String) -> String {
         "Hello World!".to_string()
@@ -126,19 +119,22 @@ mod tests {
 
     #[test]
     fn resource() {
-      let route = Route::new("/home").to(index);
-      let mut resource = Resource::new("".to_string()).route(route);
-      let mut route_services = RouteServices::new();
-      resource.register(&mut route_services);
+        let route = Route::new("/home").to(index);
+        let mut resource = Resource::new("".to_string()).route(route);
+        let mut route_services = RouteServices::new();
+        resource.register(&mut route_services);
 
-      let one = route_services.services.get(0).unwrap();
-      let req = HttpRequest::new();
-      let ext = Extensions::new();
-      let service_request = ServiceRequest { req, extensions:Rc::new(ext) };
+        let one = route_services.services.get(0).unwrap();
+        let req = HttpRequest::new();
+        let ext = Extensions::new();
+        let service_request = ServiceRequest {
+            req,
+            extensions: Rc::new(ext),
+        };
 
-      let res = one.borrow_mut().call(service_request);
-      let res = block_on(res).unwrap();
-      let res = res.0;
-      assert_eq!("Hello World!".to_string(), res);
+        let res = one.borrow_mut().call(service_request);
+        let res = block_on(res).unwrap();
+        let res = res.0;
+        assert_eq!("Hello World!".to_string(), res);
     }
 }

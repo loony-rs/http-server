@@ -1,21 +1,21 @@
-use loony_service::{ServiceFactory};
 use crate::{
-    route::Route, 
-    route::RouteServices, 
-    resource::{Resource, FinalRouteService, FinalFutureRouteService}, 
-    service::{AppServiceFactory, HttpServiceFactory, ServiceRequest, ServiceResponse}
+    resource::{FinalFutureRouteService, FinalRouteService, Resource},
+    route::Route,
+    route::RouteServices,
+    service::{AppServiceFactory, HttpServiceFactory, ServiceRequest, ServiceResponse},
 };
+use loony_service::ServiceFactory;
 
 pub type BoxedResourceServiceFactory = Box<
     dyn ServiceFactory<
-        Request = ServiceRequest, 
-        Response = ServiceResponse, 
-        Error = (), 
-        Service = FinalRouteService,
-        Config=(),
-        InitError=(),
-        Future = FinalFutureRouteService
-    >
+            Request = ServiceRequest,
+            Response = ServiceResponse,
+            Error = (),
+            Service = FinalRouteService,
+            Config = (),
+            InitError = (),
+            Future = FinalFutureRouteService,
+        >,
 >;
 
 pub struct Scope {
@@ -27,18 +27,21 @@ impl Scope {
     pub fn new(scope: &str) -> Self {
         Scope {
             scope: scope.to_owned(),
-            services: Vec::new()
+            services: Vec::new(),
         }
     }
 
     pub fn route(mut self, route: Route) -> Self {
-        self.services.push(Box::new(Resource::new(self.scope.clone()).route(route)));
+        self.services
+            .push(Box::new(Resource::new(self.scope.clone()).route(route)));
         self
     }
 }
 
 impl HttpServiceFactory for Scope {
     fn register(self, config: &mut RouteServices) {
-        self.services.into_iter().for_each(|mut f| f.register(config));
+        self.services
+            .into_iter()
+            .for_each(|mut f| f.register(config));
     }
 }

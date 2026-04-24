@@ -1,8 +1,14 @@
-use std::{collections::HashMap, future::{Future, Ready, ready}};
-use crate::{response::{HttpResponse, StatusCode}, service::ServiceResponse};
+use crate::{
+    response::{HttpResponse, StatusCode},
+    service::ServiceResponse,
+};
+use std::{
+    collections::HashMap,
+    future::{Future, Ready, ready},
+};
 
 pub trait Responder {
-    type Future: Future<Output=ServiceResponse>;
+    type Future: Future<Output = ServiceResponse>;
     fn respond(&self) -> Self::Future;
 }
 
@@ -38,12 +44,14 @@ where
             Ok(success) => {
                 let response = HttpResponse::new().body(success.clone()).build();
                 ready(ServiceResponse(response))
-            }
+            },
             Err(error) => {
-                let response = HttpResponse::new().body(error.to_string())
-                    .with_status(StatusCode::InternalServerError).build();
+                let response = HttpResponse::new()
+                    .body(error.to_string())
+                    .with_status(StatusCode::InternalServerError)
+                    .build();
                 ready(ServiceResponse(response))
-            }
+            },
         }
     }
 }
@@ -65,7 +73,10 @@ impl Responder for Vec<u8> {
         // Convert bytes to string (you might want to handle this differently)
         let body = String::from_utf8_lossy(self).to_string();
         let mut response = HttpResponse::new().body(body);
-        response.headers.insert("Content-Type".to_string(), "application/octet-stream".to_string());
+        response.headers.insert(
+            "Content-Type".to_string(),
+            "application/octet-stream".to_string(),
+        );
         let response = response.build();
         ready(ServiceResponse(response))
     }
@@ -78,7 +89,10 @@ impl Responder for &[u8] {
     fn respond(&self) -> Self::Future {
         let body = String::from_utf8_lossy(self).to_string();
         let mut response = HttpResponse::new().body(body);
-        response.headers.insert("Content-Type".to_string(), "application/octet-stream".to_string());
+        response.headers.insert(
+            "Content-Type".to_string(),
+            "application/octet-stream".to_string(),
+        );
         let response = response.build();
         ready(ServiceResponse(response))
     }
@@ -132,8 +146,7 @@ where
 
     fn respond(&self) -> Self::Future {
         let (status, body) = self;
-        let response = HttpResponse::with_body(body)
-            .with_status(*status).build();
+        let response = HttpResponse::with_body(body).with_status(*status).build();
         ready(ServiceResponse(response))
     }
 }
@@ -148,8 +161,7 @@ where
 
     fn respond(&self) -> Self::Future {
         let (status, headers, body) = self;
-        let mut response = HttpResponse::with_body(body)
-            .with_status(*status);
+        let mut response = HttpResponse::with_body(body).with_status(*status);
         response.headers.extend(headers.clone());
         let response = response.build();
         ready(ServiceResponse(response))
@@ -193,7 +205,8 @@ where
 
     fn respond(&self) -> Self::Future {
         let response = HttpResponse::with_body(self.0.clone())
-            .with_header("Content-Type", "text/html; charset=utf-8").build();
+            .with_header("Content-Type", "text/html; charset=utf-8")
+            .build();
         ready(ServiceResponse(response))
     }
 }
@@ -209,7 +222,8 @@ where
 
     fn respond(&self) -> Self::Future {
         let response = HttpResponse::with_body(self.0.clone())
-            .with_header("Content-Type", "text/plain; charset=utf-8").build();
+            .with_header("Content-Type", "text/plain; charset=utf-8")
+            .build();
         ready(ServiceResponse(response))
     }
 }

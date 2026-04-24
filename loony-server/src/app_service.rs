@@ -1,12 +1,12 @@
-use std::rc::Rc;
-use std::cell::RefCell;
-use futures::future::ready;
-use futures::{future::Ready};
-use crate::route::RouteServices;
 use crate::extensions::Extensions;
+use crate::route::RouteServices;
 use crate::router::AllRouteServices;
-use crate::service::{AppServiceFactory};
-use loony_service::{ServiceFactory, Service};
+use crate::service::AppServiceFactory;
+use futures::future::Ready;
+use futures::future::ready;
+use loony_service::{Service, ServiceFactory};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 pub struct AppFactory {
     pub services: Rc<RefCell<Vec<Box<dyn AppServiceFactory>>>>,
@@ -54,7 +54,7 @@ impl ServiceFactory for AppFactory {
         }))
     }
 }
- 
+
 pub struct AppHttpService {
     pub(crate) extensions: Extensions,
     pub(crate) route: AllRouteServices,

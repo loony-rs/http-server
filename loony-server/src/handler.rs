@@ -1,66 +1,66 @@
 use std::future::Future;
 use std::marker::PhantomData;
-use std::{ pin::Pin, task::Poll};
+use std::{pin::Pin, task::Poll};
 
 use crate::responder::Responder;
-use loony_service::{Service};
 use crate::service::{ServiceRequest, ServiceResponse};
+use loony_service::Service;
 
-pub trait Factory<P, R, O>: Clone + 'static 
-where 
-    R: Future<Output=O>, 
+pub trait Factory<P, R, O>: Clone + 'static
+where
+    R: Future<Output = O>,
     O: Responder,
 {
     fn call(&self, param: P) -> R;
 }
 
-impl<T, R, O> Factory<(), R, O> for T 
+impl<T, R, O> Factory<(), R, O> for T
 where
     T: Fn() -> R + Clone + 'static,
-    R: Future<Output=O>,
-    O: Responder 
+    R: Future<Output = O>,
+    O: Responder,
 {
     fn call(&self, _: ()) -> R {
         (self)()
     }
 }
 
-impl<T, PA, R, O> Factory<(PA,), R, O> for T 
+impl<T, PA, R, O> Factory<(PA,), R, O> for T
 where
-    T: Fn(PA,) -> R + Clone + 'static,
-    R: Future<Output=O>,
-    O: Responder 
+    T: Fn(PA) -> R + Clone + 'static,
+    R: Future<Output = O>,
+    O: Responder,
 {
     fn call(&self, (pa,): (PA,)) -> R {
         (self)(pa)
     }
 }
 
-impl<T, PA, PB, R, O> Factory<(PA,PB), R, O> for T 
+impl<T, PA, PB, R, O> Factory<(PA, PB), R, O> for T
 where
-    T: Fn(PA,PB,) -> R + Clone + 'static,
-    R: Future<Output=O>,
-    O: Responder 
+    T: Fn(PA, PB) -> R + Clone + 'static,
+    R: Future<Output = O>,
+    O: Responder,
 {
-    fn call(&self, (pa,pb,): (PA,PB)) -> R {
+    fn call(&self, (pa, pb): (PA, PB)) -> R {
         (self)(pa, pb)
     }
 }
 
-pub struct Handler<T, P, R, O> 
+pub struct Handler<T, P, R, O>
 where
     T: Factory<P, R, O>,
-    R: Future<Output=O>,
+    R: Future<Output = O>,
     O: Responder,
 {
-    factory: T, 
-    _t: PhantomData<(P, R, O)>
+    factory: T,
+    _t: PhantomData<(P, R, O)>,
 }
 
-impl<T, P, R, O> Handler<T, P, R, O> 
+impl<T, P, R, O> Handler<T, P, R, O>
 where
     T: Factory<P, R, O>,
-    R: Future<Output=O>,
+    R: Future<Output = O>,
     O: Responder,
 {
     pub fn new(factory: T) -> Self {
@@ -71,10 +71,10 @@ where
     }
 }
 
-impl<T, P, R, O> Clone for Handler<T, P, R, O> 
+impl<T, P, R, O> Clone for Handler<T, P, R, O>
 where
     T: Factory<P, R, O>,
-    R: Future<Output=O>,
+    R: Future<Output = O>,
     O: Responder,
 {
     fn clone(&self) -> Self {
@@ -85,10 +85,10 @@ where
     }
 }
 
-impl<T, P, R, O> Service for Handler<T, P, R, O> 
-where 
+impl<T, P, R, O> Service for Handler<T, P, R, O>
+where
     T: Factory<P, R, O>,
-    R: Future<Output=O>,
+    R: Future<Output = O>,
     O: Responder,
 {
     type Request = (P, ServiceRequest);
@@ -104,42 +104,42 @@ where
     }
 }
 
-pub struct HandlerServiceResponseProjection<'pin, R, O> 
+pub struct HandlerServiceResponseProjection<'pin, R, O>
 where
     R: Future<Output = O>,
-    O: Responder
+    O: Responder,
 {
     fut: Pin<&'pin mut R>,
     fut2: Pin<&'pin mut Option<O::Future>>,
 }
 
-pub struct HandlerServiceResponse<R, O> 
+pub struct HandlerServiceResponse<R, O>
 where
     R: Future<Output = O>,
-    O: Responder
+    O: Responder,
 {
     fut: R,
     fut2: Option<O::Future>,
 }
 
-impl<R, O> HandlerServiceResponse<R, O> 
+impl<R, O> HandlerServiceResponse<R, O>
 where
     R: Future<Output = O>,
-    O: Responder
+    O: Responder,
 {
     fn _project<'pin>(self: Pin<&'pin mut Self>) -> HandlerServiceResponseProjection<'pin, R, O> {
         unsafe {
-            let Self {fut, fut2} = self.get_unchecked_mut();
+            let Self { fut, fut2 } = self.get_unchecked_mut();
             HandlerServiceResponseProjection {
                 fut: Pin::new_unchecked(fut),
-                fut2: Pin::new_unchecked(fut2)
+                fut2: Pin::new_unchecked(fut2),
             }
         }
     }
 }
 
-impl<R, O> Future for HandlerServiceResponse<R, O> 
-where 
+impl<R, O> Future for HandlerServiceResponse<R, O>
+where
     R: Future<Output = O>,
     O: Responder,
 {
@@ -149,9 +149,7 @@ where
         let this = self.as_mut()._project();
         if let Some(fut) = this.fut2.as_pin_mut() {
             return match fut.poll(cx) {
-                Poll::Ready(res) => {
-                    Poll::Ready(Ok(res))
-                }
+                Poll::Ready(res) => Poll::Ready(Ok(res)),
                 Poll::Pending => Poll::Pending,
             };
         }

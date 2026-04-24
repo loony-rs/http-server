@@ -1,26 +1,22 @@
-mod controller;
 mod connection;
+mod controller;
 
-use loony_server::{
-    App, HttpServer, responder::Responder, route, router::Router
-};
-use crate::{connection::pg_connection};
+use crate::connection::pg_connection;
 use deadpool_postgres::Pool;
+use loony_server::{App, HttpServer, responder::Responder, route, router::Router};
 
 async fn index() -> impl Responder {
     String::from("Hello World")
 }
 
 fn routes() -> Router {
-    Router::new()
-    .route(route::get("/").to(index))
-    .service(
+    Router::new().route(route::get("/").to(index)).service(
         route::scope("/user")
-        .route(route::get("/all").to(controller::users))
-        .route(route::get("/get/:user_id").to(controller::get_user))
-        .route(route::get("/get/:user_id/:user_name").to(controller::get_user_name))
-        .route(route::get("/delete/:user_id").to(controller::delete_user))
-        .route(route::get("/update/:user_id").to(controller::update_user))
+            .route(route::get("/all").to(controller::users))
+            .route(route::get("/get/:user_id").to(controller::get_user))
+            .route(route::get("/get/:user_id/:user_name").to(controller::get_user_name))
+            .route(route::get("/delete/:user_id").to(controller::delete_user))
+            .route(route::get("/update/:user_id").to(controller::update_user)),
     )
 }
 
@@ -42,7 +38,9 @@ async fn main() {
 
     if let Err(e) = HttpServer::new(move || {
         App::new()
-            .app_data(AppState { name: "loony".to_owned() })
+            .app_data(AppState {
+                name: "loony".to_owned(),
+            })
             .data(db.clone())
             .routes(routes)
     })

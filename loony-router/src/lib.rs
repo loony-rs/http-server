@@ -17,7 +17,10 @@ pub enum RouterError {
 impl std::fmt::Display for RouterError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::ConflictingParameterNames { existing, conflicting } => write!(
+            Self::ConflictingParameterNames {
+                existing,
+                conflicting,
+            } => write!(
                 f,
                 "conflicting path parameter names: existing ':{existing}', new ':{conflicting}'"
             ),

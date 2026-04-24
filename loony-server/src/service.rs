@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
-use crate::{route::RouteServices, extensions::Extensions, request::HttpRequest};
+use crate::{extensions::Extensions, request::HttpRequest, route::RouteServices};
 
 pub trait HttpServiceFactory {
-    fn register(self,  config: &mut RouteServices);
+    fn register(self, config: &mut RouteServices);
 }
 
 pub trait AppServiceFactory {
@@ -14,11 +14,10 @@ pub trait RouteServiceFactory {
     fn register(&mut self, config: &mut RouteServices);
 }
 
-
 #[derive(Clone)]
-pub struct ServiceRequest{
+pub struct ServiceRequest {
     pub req: HttpRequest,
-    pub extensions: Rc<Extensions>
+    pub extensions: Rc<Extensions>,
 }
 
 // #[derive(Clone)]

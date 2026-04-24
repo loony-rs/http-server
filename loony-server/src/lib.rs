@@ -1,20 +1,21 @@
-pub mod responder;
-pub mod handler;
-pub mod route;
-pub mod extensions;
-pub mod scope;
-pub mod resource;
-pub mod response;
-pub mod request;
-pub mod service;
-pub mod extract;
 pub mod app_service;
-pub mod error;
 pub mod connection;
+pub mod error;
+pub mod extensions;
+pub mod extract;
+pub mod handler;
+pub mod request;
+pub mod resource;
+pub mod responder;
+pub mod response;
+pub mod route;
 pub mod router;
+pub mod scope;
+pub mod service;
 
-mod server;
 mod app;
+mod server;
 
 pub use app::App;
+pub use extract::Json;
 pub use server::HttpServer;

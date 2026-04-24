@@ -1,17 +1,16 @@
 use crate::{
+    app_service::AppHttpService, extensions::Extensions, request::HttpRequest,
+    resource::FinalRouteService, service::ServiceRequest,
+};
+use crate::{
     connection::Connection,
     error::{HandlerError, ParseError, ServerError},
     response::HttpResponse,
     router::AllRouteServices,
 };
-use crate::{
-    app_service::AppHttpService,
-    extensions::Extensions,
-    request::HttpRequest,
-    resource::FinalRouteService,
-    service::ServiceRequest,
-};
 
+use loony_service::{IntoServiceFactory, Service, ServiceFactory};
+use socket2::{Domain, Socket, Type};
 use std::{
     cell::RefCell,
     marker::PhantomData,
@@ -19,9 +18,7 @@ use std::{
     rc::Rc,
     time::Duration,
 };
-use socket2::{Domain, Socket, Type};
 use tokio::net::TcpListener as TokioListener;
-use loony_service::{IntoServiceFactory, Service, ServiceFactory};
 
 // ---------------------------------------------------------------------------
 // Run — owns the live router and accepts connections
@@ -50,10 +47,10 @@ impl Run {
                             if let Err(e) = self.handle_connection(std_stream).await {
                                 eprintln!("connection error: {e}");
                             }
-                        }
+                        },
                         Err(e) => eprintln!("stream conversion error: {e}"),
                     }
-                }
+                },
                 Err(e) => eprintln!("accept error: {e}"),
             }
         }
@@ -77,9 +74,11 @@ impl Run {
     /// Parse raw bytes into a structured `HttpRequest`.
     fn parse_request(&self, buffer: &[u8]) -> Result<HttpRequest, ServerError> {
         let mut request = HttpRequest::new();
-        request.parse(buffer).map_err(|reason| {
-            ParseError::MalformedHeaders { reason: reason.to_string() }
-        })?;
+        request
+            .parse(buffer)
+            .map_err(|reason| ParseError::MalformedHeaders {
+                reason: reason.to_string(),
+            })?;
         Ok(request.into())
     }
 
@@ -145,7 +144,10 @@ where
     T: ServiceFactory<Request = (), Config = (), Service = AppHttpService>,
 {
     fn new(app: F) -> Self {
-        ServeHttpService { app, _p: PhantomData }
+        ServeHttpService {
+            app,
+            _p: PhantomData,
+        }
     }
 
     /// Build services, then hand the live router to `Run`.
@@ -155,7 +157,7 @@ where
             Err(e) => {
                 eprintln!("service init failed: {e}");
                 return;
-            }
+            },
         };
 
         let tokio_listener = match TokioListener::from_std(std_listener) {
@@ -163,7 +165,7 @@ where
             Err(e) => {
                 eprintln!("listener setup failed: {e}");
                 return;
-            }
+            },
         };
 
         Run {
@@ -182,9 +184,7 @@ where
     /// inside `AppFactory::new_service` use `futures::executor::block_on`
     /// (see route.rs / resource.rs), which is safe for pure-computation
     /// futures that do not touch tokio primitives.
-    async fn new_service(
-        &mut self,
-    ) -> Result<(Extensions, AllRouteServices), ServerError> {
+    async fn new_service(&mut self) -> Result<(Extensions, AllRouteServices), ServerError> {
         let app = (self.app)();
         let app_factory = app.into_factory();
         let app_service_future = app_factory.new_service(());

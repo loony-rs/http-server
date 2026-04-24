@@ -67,7 +67,6 @@ pub trait Service {
     /// Calling `call` without calling `poll_ready` is permitted. The
     /// implementation must be resilient to this fact.
     fn call(&mut self, req: Self::Request) -> Self::Future;
-
 }
 
 /// Factory for creating `Service`s.
@@ -93,11 +92,7 @@ pub trait ServiceFactory {
     type Config;
 
     /// The kind of `Service` created by this factory.
-    type Service: Service<
-        Request = Self::Request,
-        Response = Self::Response,
-        Error = Self::Error,
-    >;
+    type Service: Service<Request = Self::Request, Response = Self::Response, Error = Self::Error>;
 
     /// Errors potentially raised while building a service.
     type InitError;
@@ -107,7 +102,6 @@ pub trait ServiceFactory {
 
     /// Create and return a new service asynchronously.
     fn new_service(&self, cfg: Self::Config) -> Self::Future;
-
 }
 
 impl<'a, S> Service for &'a mut S

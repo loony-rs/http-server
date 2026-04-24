@@ -35,17 +35,11 @@ pub enum ServerError {
         source: Box<dyn std::error::Error + Send + Sync>,
     },
     #[error("Configuration error: {message}")]
-    ConfigError {
-        message: String,
-    },
+    ConfigError { message: String },
     #[error("Timeout error: {operation} took too long")]
-    TimeoutError {
-        operation: String,
-    },
+    TimeoutError { operation: String },
     #[error("Resource not found: {resource}")]
-    ResourceNotFound {
-        resource: String,
-    },
+    ResourceNotFound { resource: String },
 }
 
 /// Connection-level errors
@@ -66,43 +60,26 @@ pub enum ConnectionError {
     #[error("Connection timeout")]
     Timeout,
     #[error("Protocol error: {message}")]
-    ProtocolError {
-        message: String,
-    },
+    ProtocolError { message: String },
 }
-
 
 /// Request parsing errors
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
     #[error("Invalid HTTP method: {method}")]
-    InvalidMethod {
-        method: String,
-    },
+    InvalidMethod { method: String },
     #[error("Invalid URI: {uri}")]
-    InvalidUri {
-        uri: String,
-    },
+    InvalidUri { uri: String },
     #[error("Invalid HTTP version: {version}")]
-    InvalidVersion {
-        version: String,
-    },
+    InvalidVersion { version: String },
     #[error("Malformed headers: {reason}")]
-    MalformedHeaders {
-        reason: String,
-    },
+    MalformedHeaders { reason: String },
     #[error("Buffer overflow: tried to read {attempted} bytes into {capacity} byte buffer")]
-    BufferOverflow {
-        attempted: usize,
-        capacity: usize,
-    },
+    BufferOverflow { attempted: usize, capacity: usize },
     #[error("Invalid UTF-8 sequence in request")]
     InvalidUtf8,
     #[error("Content length mismatch: expected {expected}, got {actual}")]
-    ContentLengthMismatch {
-        expected: usize,
-        actual: usize,
-    },
+    ContentLengthMismatch { expected: usize, actual: usize },
 }
 
 /// Request handling errors
@@ -111,25 +88,15 @@ pub enum HandlerError {
     #[error("Missing URI in request")]
     MissingUri,
     #[error("Route not found: {route}")]
-    RouteNotFound {
-        route: String,
-    },
+    RouteNotFound { route: String },
     #[error("Method not allowed for route: {route}")]
-    MethodNotAllowed {
-        route: String,
-    },
+    MethodNotAllowed { route: String },
     #[error("Service unavailable: {reason}")]
-    ServiceUnavailable {
-        reason: String,
-    },
+    ServiceUnavailable { reason: String },
     #[error("Payload too large: {size} bytes")]
-    PayloadTooLarge {
-        size: usize,
-    },
+    PayloadTooLarge { size: usize },
     #[error("Unsupported media type: {content_type}")]
-    UnsupportedMediaType {
-        content_type: String,
-    },
+    UnsupportedMediaType { content_type: String },
     #[error("Internal server error: {source}")]
     InternalError {
         source: Box<dyn std::error::Error + Send + Sync>,
@@ -140,15 +107,11 @@ pub enum HandlerError {
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceError {
     #[error("Service creation failed: {reason}")]
-    CreationFailed {
-        reason: String,
-    },
+    CreationFailed { reason: String },
     #[error("Service initialization timeout")]
     InitializationTimeout,
     #[error("Service dependency error: {service}")]
-    DependencyError {
-        service: String,
-    },
+    DependencyError { service: String },
 }
 
 // Convenient type aliases
@@ -186,9 +149,7 @@ impl ServerError {
     //     }
     // }
     pub fn service_init_error(msg: String) -> Self {
-        ServerError::ServiceInitializationFailed {
-            message: msg,
-        }
+        ServerError::ServiceInitializationFailed { message: msg }
     }
 
     pub fn timeout(operation: &str) -> Self {

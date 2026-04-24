@@ -5,9 +5,9 @@ use loony_service::IntoServiceFactory;
 
 use crate::app_service::AppFactory;
 use crate::extensions::Extensions;
-use crate::route::{Route};
+use crate::route::Route;
 use crate::router::Router;
-use crate::service::{AppServiceFactory};
+use crate::service::AppServiceFactory;
 
 pub struct App {
     pub extensions: Extensions,
@@ -16,10 +16,10 @@ pub struct App {
 
 impl App {
     pub fn new() -> Self {
-      App { 
-        extensions: Extensions::new(),
-        services: Vec::new()
-      } 
+        App {
+            extensions: Extensions::new(),
+            services: Vec::new(),
+        }
     }
 
     pub fn app_data<U: 'static>(mut self, ext: U) -> Self {
@@ -32,13 +32,15 @@ impl App {
         self
     }
 
-    pub fn route(mut self, route: Route) -> Self 
-    {
+    pub fn route(mut self, route: Route) -> Self {
         self.services.push(Box::new(route));
         self
     }
 
-    pub fn routes<'a, T>(mut self, cnfg: T) -> Self where T: Fn() -> Router {
+    pub fn routes<'a, T>(mut self, cnfg: T) -> Self
+    where
+        T: Fn() -> Router,
+    {
         let router = cnfg();
         self.services.extend(router.services);
         self

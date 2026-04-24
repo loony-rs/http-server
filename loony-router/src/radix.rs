@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::RouterError;
+use std::collections::HashMap;
 
 #[derive(Default)]
 pub struct RadixNode {
@@ -14,7 +14,9 @@ pub struct RadixRouter {
 
 impl RadixRouter {
     pub fn new() -> Self {
-        Self { root: RadixNode::default() }
+        Self {
+            root: RadixNode::default(),
+        }
     }
 
     /// Insert a route into the tree.
@@ -61,7 +63,8 @@ impl RadixRouter {
             } else {
                 let mut new_child = RadixNode::default();
                 Self::add_to_node(&mut new_child, remaining, service_index)?;
-                node.static_children.insert(segment.to_string(), Box::new(new_child));
+                node.static_children
+                    .insert(segment.to_string(), Box::new(new_child));
             }
         }
 
@@ -79,7 +82,6 @@ impl RadixRouter {
         segments: &[&str],
         params: &mut HashMap<String, String>,
     ) -> Option<usize> {
-
         if segments.is_empty() {
             return node.service_index.clone();
         }
@@ -105,7 +107,6 @@ impl RadixRouter {
 
         node.service_index.clone()
     }
-
 }
 
 #[cfg(test)]

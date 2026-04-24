@@ -3,7 +3,6 @@
 //     pub value: String,
 // }
 
-
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
@@ -47,28 +46,60 @@ impl IntoStatusCode for u16 {
 
 impl StatusCode {
     // Common success methods
-    pub fn ok() -> Self { StatusCode::Ok }
-    pub fn created() -> Self { StatusCode::Created }
-    pub fn no_content() -> Self { StatusCode::NoContent }
-    
+    pub fn ok() -> Self {
+        StatusCode::Ok
+    }
+    pub fn created() -> Self {
+        StatusCode::Created
+    }
+    pub fn no_content() -> Self {
+        StatusCode::NoContent
+    }
+
     // Common client error methods
-    pub fn bad_request() -> Self { StatusCode::BadRequest }
-    pub fn unauthorized() -> Self { StatusCode::Unauthorized }
-    pub fn forbidden() -> Self { StatusCode::Forbidden }
-    pub fn not_found() -> Self { StatusCode::NotFound }
-    pub fn method_not_allowed() -> Self { StatusCode::MethodNotAllowed }
-    
+    pub fn bad_request() -> Self {
+        StatusCode::BadRequest
+    }
+    pub fn unauthorized() -> Self {
+        StatusCode::Unauthorized
+    }
+    pub fn forbidden() -> Self {
+        StatusCode::Forbidden
+    }
+    pub fn not_found() -> Self {
+        StatusCode::NotFound
+    }
+    pub fn method_not_allowed() -> Self {
+        StatusCode::MethodNotAllowed
+    }
+
     // Common server error methods
-    pub fn internal_server_error() -> Self { StatusCode::InternalServerError }
-    pub fn not_implemented() -> Self { StatusCode::NotImplemented }
-    pub fn bad_gateway() -> Self { StatusCode::BadGateway }
-    pub fn service_unavailable() -> Self { StatusCode::ServiceUnavailable }
-    
+    pub fn internal_server_error() -> Self {
+        StatusCode::InternalServerError
+    }
+    pub fn not_implemented() -> Self {
+        StatusCode::NotImplemented
+    }
+    pub fn bad_gateway() -> Self {
+        StatusCode::BadGateway
+    }
+    pub fn service_unavailable() -> Self {
+        StatusCode::ServiceUnavailable
+    }
+
     // Redirection methods
-    pub fn moved_permanently() -> Self { StatusCode::MovedPermanently }
-    pub fn found() -> Self { StatusCode::Found }
-    pub fn temporary_redirect() -> Self { StatusCode::TemporaryRedirect }
-    pub fn permanent_redirect() -> Self { StatusCode::PermanentRedirect }
+    pub fn moved_permanently() -> Self {
+        StatusCode::MovedPermanently
+    }
+    pub fn found() -> Self {
+        StatusCode::Found
+    }
+    pub fn temporary_redirect() -> Self {
+        StatusCode::TemporaryRedirect
+    }
+    pub fn permanent_redirect() -> Self {
+        StatusCode::PermanentRedirect
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -222,7 +253,6 @@ impl StatusCode {
             StatusCode::NotExtended => "Not Extended",
             StatusCode::NetworkAuthenticationRequired => "Network Authentication Required",
         }
-        
     }
 
     /// Check if the status code is informational (1xx)
@@ -455,7 +485,7 @@ impl HttpResponse {
         let body_str = body.into();
         let mut headers = HashMap::new();
         headers.insert("Content-Length".to_string(), body_str.len().to_string());
-        
+
         Self {
             status: StatusCode::Ok,
             headers,
@@ -479,33 +509,38 @@ impl HttpResponse {
     }
 
     pub fn content_type(mut self, content_type: &str) -> Self {
-        self.headers.insert("Content-Type".to_string(), content_type.to_string());
+        self.headers
+            .insert("Content-Type".to_string(), content_type.to_string());
         self
     }
 
     pub fn body<T: Into<String>>(mut self, body: T) -> Self {
         let body_str = body.into();
-        self.headers.insert("Content-Length".to_string(), body_str.len().to_string());
+        self.headers
+            .insert("Content-Length".to_string(), body_str.len().to_string());
         self.body = Some(body_str);
         self
     }
 
     pub fn json<T: serde::Serialize>(mut self, data: T) -> Result<Self, serde_json::Error> {
         let json_string = serde_json::to_string(&data)?;
-        self.headers.insert("Content-Type".to_string(), "application/json".to_string());
-        self.headers.insert("Content-Length".to_string(), json_string.len().to_string());
+        self.headers
+            .insert("Content-Type".to_string(), "application/json".to_string());
+        self.headers
+            .insert("Content-Length".to_string(), json_string.len().to_string());
         self.body = Some(json_string);
         Ok(self)
     }
 
     pub fn build(self) -> String {
         let status_line = format!("{} {}", self.version, self.status);
-        
-        let headers: Vec<String> = self.headers
+
+        let headers: Vec<String> = self
+            .headers
             .iter()
             .map(|(k, v)| format!("{}: {}", k, v))
             .collect();
-        
+
         let headers_section = if headers.is_empty() {
             String::new()
         } else {

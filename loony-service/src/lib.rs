@@ -1,10 +1,10 @@
 mod service;
 
 pub use service::{
-  Service,
-  ServiceFactory,
-  IntoService,
-  IntoServiceFactory,
-  into_service,
-  // BoxedServiceFactory,
+    IntoService,
+    IntoServiceFactory,
+    Service,
+    ServiceFactory,
+    into_service,
+    // BoxedServiceFactory,
 };

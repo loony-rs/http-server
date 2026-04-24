@@ -1,20 +1,23 @@
+use loony_router::{RouterError, radix::RadixRouter};
 use std::cell::RefCell;
 use std::rc::Rc;
-use loony_router::{radix::RadixRouter, RouterError};
 
-use crate::{resource::FinalRouteService, route::Route, service::{AppServiceFactory, HttpServiceFactory, ServiceFactoryWrapper}};
+use crate::{
+    resource::FinalRouteService,
+    route::Route,
+    service::{AppServiceFactory, HttpServiceFactory, ServiceFactoryWrapper},
+};
 
 pub struct AllRouteServices {
     route: RadixRouter,
-    services: Vec<Rc<RefCell<FinalRouteService>>>
+    services: Vec<Rc<RefCell<FinalRouteService>>>,
 }
 
 impl AllRouteServices {
-
     pub fn new() -> Self {
         Self {
             route: RadixRouter::new(),
-            services: Vec::new()
+            services: Vec::new(),
         }
     }
 
@@ -49,8 +52,8 @@ pub struct Router {
 
 impl Router {
     pub fn new() -> Self {
-        Router { 
-            services: Vec::new()
+        Router {
+            services: Vec::new(),
         }
     }
 
@@ -59,12 +62,12 @@ impl Router {
         self
     }
 
-
     pub fn service<T>(mut self, factory: T) -> Self
-    where 
-      T: HttpServiceFactory + 'static
+    where
+        T: HttpServiceFactory + 'static,
     {
-      self.services.push(Box::new(ServiceFactoryWrapper::new(factory)));
-      self
+        self.services
+            .push(Box::new(ServiceFactoryWrapper::new(factory)));
+        self
     }
 }
