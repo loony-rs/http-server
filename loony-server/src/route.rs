@@ -90,8 +90,14 @@ impl<'route> Route {
 impl AppServiceFactory for Route {
     fn register(&mut self, config: &mut RouteServices) {
         let service = self.service.new_service(());
-        let service = block_on(service).unwrap();
-        config.service(FinalRouteService { service, route_name: self.path.clone() });
+        match block_on(service) {
+            Ok(service) => {
+                config.service(FinalRouteService { service, route_name: self.path.clone() });
+            }
+            Err(()) => {
+                eprintln!("warning: failed to build service for route '{}'", self.path);
+            }
+        }
     }
 }
 

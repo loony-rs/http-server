@@ -1,6 +1,6 @@
 use crate::{
     connection::Connection,
-    error::*,
+    error::{HandlerError, ParseError, ServerError},
     response::HttpResponse,
     router::AllRouteServices,
 };
@@ -77,7 +77,9 @@ impl Run {
     /// Parse raw bytes into a structured `HttpRequest`.
     fn parse_request(&self, buffer: &[u8]) -> Result<HttpRequest, ServerError> {
         let mut request = HttpRequest::new();
-        let _ = request.parse(buffer).unwrap(); // unwrap addressed in Step 2
+        request.parse(buffer).map_err(|reason| {
+            ParseError::MalformedHeaders { reason: reason.to_string() }
+        })?;
         Ok(request.into())
     }
 
@@ -239,6 +241,9 @@ where
 
     /// Bind the socket and start accepting connections.
     ///
+    /// Returns `Err` if the port is invalid or the socket cannot be bound
+    /// (e.g. the port is already in use).
+    ///
     /// Uses a `LocalSet` so that the worker task (which holds `Rc<...>`
     /// types that are `!Send`) can be scheduled on the current thread
     /// without requiring `Arc` or `Send` bounds.
@@ -246,24 +251,21 @@ where
     /// Step 5 replaces the `0..1` loop with a configurable worker count,
     /// each pinned to its own OS thread via `tokio::task::spawn_blocking` +
     /// a dedicated `LocalSet`.
-    pub async fn run(self) {
+    pub async fn run(self) -> Result<(), ServerError> {
+        let port = u16::try_from(self.port).map_err(|_| ServerError::ConfigError {
+            message: format!("invalid port {}: must be 0–65535", self.port),
+        })?;
+
         let local = tokio::task::LocalSet::new();
 
         for _ in 0..1 {
             let app = self.app.clone();
-            let port = self.port;
 
-            let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
-            socket.set_reuse_port(true).unwrap();
-            socket
-                .bind(
-                    &format!("127.0.0.1:{port}")
-                        .parse::<std::net::SocketAddr>()
-                        .unwrap()
-                        .into(),
-                )
-                .unwrap();
-            socket.listen(128).unwrap();
+            let socket = Socket::new(Domain::IPV4, Type::STREAM, None)?;
+            socket.set_reuse_port(true)?;
+            let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+            socket.bind(&addr.into())?;
+            socket.listen(128)?;
             let listener: TcpListener = socket.into();
 
             local.spawn_local(async move {
@@ -272,6 +274,7 @@ where
         }
 
         local.await;
+        Ok(())
     }
 }
 

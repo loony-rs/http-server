@@ -31,14 +31,18 @@ impl ServiceFactory for AppFactory {
     fn new_service(&self, _: Self::Config) -> Self::Future {
         let mut route_services = RouteServices::new();
         std::mem::take(&mut *self.services.borrow_mut())
-        .into_iter()
-        .for_each(|mut srv| srv.register(&mut route_services));
+            .into_iter()
+            .for_each(|mut srv| srv.register(&mut route_services));
+
         let mut radix_router = AllRouteServices::new();
-        let route_services = route_services.into_services();
-        route_services.iter().for_each(|f| {
+        for f in route_services.into_services() {
             let route = f.borrow().route_name.clone();
-            radix_router.add_route(&route, Rc::clone(&f));
-        });
+            if let Err(e) = radix_router.add_route(&route, Rc::clone(&f)) {
+                eprintln!("fatal: route registration failed for '{route}': {e}");
+                return ready(Err(()));
+            }
+        }
+
         let extensions = self
             .extensions
             .borrow_mut()

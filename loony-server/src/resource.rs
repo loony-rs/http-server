@@ -60,8 +60,12 @@ impl ServiceFactory for Resource {
 impl AppServiceFactory for Resource {
   fn register(&mut self, config: &mut RouteServices) {
     let a = self.new_service(());
-    let b = block_on(a).unwrap();
-    config.service(b);
+    match block_on(a) {
+        Ok(b) => config.service(b),
+        Err(()) => {
+            eprintln!("warning: failed to build service for resource '{}'", self.scope);
+        }
+    }
   }
 }
 
@@ -92,11 +96,12 @@ impl Future for FinalFutureRouteService {
     type Output = Result<FinalRouteService, ()>;
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.fut.fut.as_mut().poll(cx) {
-          Poll::Ready(service) => Poll::Ready(Ok(FinalRouteService {
-              service: service.unwrap(),
-              route_name: self.route_name.clone(),
-          })),
-          Poll::Pending => Poll::Pending
+            Poll::Ready(Ok(service)) => Poll::Ready(Ok(FinalRouteService {
+                service,
+                route_name: self.route_name.clone(),
+            })),
+            Poll::Ready(Err(())) => Poll::Ready(Err(())),
+            Poll::Pending => Poll::Pending,
         }
     }
 }

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use crate::RouterError;
 
 #[derive(Default)]
 pub struct RadixNode {
@@ -16,44 +17,55 @@ impl RadixRouter {
         Self { root: RadixNode::default() }
     }
 
-
-    pub fn add_route(&mut self, path: &str, service_index: usize) {
+    /// Insert a route into the tree.
+    ///
+    /// Returns `Err(RouterError::ConflictingParameterNames)` if a dynamic
+    /// segment at the same position already exists under a different name.
+    /// The caller is responsible for aborting startup cleanly on error.
+    pub fn add_route(&mut self, path: &str, service_index: usize) -> Result<(), RouterError> {
         let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-        Self::add_to_node(&mut self.root, &segments, service_index);
+        Self::add_to_node(&mut self.root, &segments, service_index)
     }
 
-    pub fn add_to_node(node: &mut RadixNode, segments: &[&str], service_index: usize) {
+    fn add_to_node(
+        node: &mut RadixNode,
+        segments: &[&str],
+        service_index: usize,
+    ) -> Result<(), RouterError> {
         if segments.is_empty() {
             node.service_index = Some(service_index);
-            return;
+            return Ok(());
         }
 
         let segment = segments[0];
         let remaining = &segments[1..];
 
         if segment.starts_with(':') {
-            // Parameter segment
-            let param_name = segment[1..].to_string();
+            let param_name = &segment[1..];
             if let Some((existing_name, child_node)) = &mut node.param_child {
-                if *existing_name != param_name {
-                    panic!("Conflicting parameter names");
+                if existing_name != param_name {
+                    return Err(RouterError::ConflictingParameterNames {
+                        existing: existing_name.clone(),
+                        conflicting: param_name.to_string(),
+                    });
                 }
-                Self::add_to_node(child_node, remaining, service_index);
+                Self::add_to_node(child_node, remaining, service_index)?;
             } else {
                 let mut new_child = RadixNode::default();
-                Self::add_to_node(&mut new_child, remaining, service_index);
-                node.param_child = Some((param_name, Box::new(new_child)));
+                Self::add_to_node(&mut new_child, remaining, service_index)?;
+                node.param_child = Some((param_name.to_string(), Box::new(new_child)));
             }
         } else {
-            // Static segment
             if let Some(child_node) = node.static_children.get_mut(segment) {
-                Self::add_to_node(child_node, remaining, service_index);
+                Self::add_to_node(child_node, remaining, service_index)?;
             } else {
                 let mut new_child = RadixNode::default();
-                Self::add_to_node(&mut new_child, remaining, service_index);
+                Self::add_to_node(&mut new_child, remaining, service_index)?;
                 node.static_children.insert(segment.to_string(), Box::new(new_child));
             }
         }
+
+        Ok(())
     }
 
     pub fn find_route(&self, path: &str) -> Option<(usize, HashMap<String, String>)> {
@@ -94,4 +106,56 @@ impl RadixRouter {
         node.service_index.clone()
     }
 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::RouterError;
+
+    #[test]
+    fn add_route_ok() {
+        let mut router = RadixRouter::new();
+        assert!(router.add_route("/user/:id", 0).is_ok());
+        assert!(router.add_route("/user/:id/posts", 1).is_ok());
+    }
+
+    #[test]
+    fn add_route_conflict_returns_err_not_panic() {
+        let mut router = RadixRouter::new();
+        router.add_route("/user/:id", 0).unwrap();
+        let err = router.add_route("/user/:uid", 1).unwrap_err();
+        assert_eq!(
+            err,
+            RouterError::ConflictingParameterNames {
+                existing: "id".to_string(),
+                conflicting: "uid".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn find_route_static() {
+        let mut router = RadixRouter::new();
+        router.add_route("/health", 0).unwrap();
+        let (idx, params) = router.find_route("/health").unwrap();
+        assert_eq!(idx, 0);
+        assert!(params.is_empty());
+    }
+
+    #[test]
+    fn find_route_with_param() {
+        let mut router = RadixRouter::new();
+        router.add_route("/user/:id", 0).unwrap();
+        let (idx, params) = router.find_route("/user/42").unwrap();
+        assert_eq!(idx, 0);
+        assert_eq!(params["id"], "42");
+    }
+
+    #[test]
+    fn find_route_no_match_returns_none() {
+        let mut router = RadixRouter::new();
+        router.add_route("/user/:id", 0).unwrap();
+        assert!(router.find_route("/missing").is_none());
+    }
 }

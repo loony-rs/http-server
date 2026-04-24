@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use loony_router::radix::RadixRouter;
+use loony_router::{radix::RadixRouter, RouterError};
 
 use crate::{resource::FinalRouteService, route::Route, service::{AppServiceFactory, HttpServiceFactory, ServiceFactoryWrapper}};
 
@@ -18,10 +18,19 @@ impl AllRouteServices {
         }
     }
 
-    pub fn add_route(&mut self, path: &str, service: Rc<RefCell<FinalRouteService>>) {
+    /// Register a service for a path.
+    ///
+    /// Returns `Err` if the path conflicts with an already-registered
+    /// dynamic segment name. The caller should treat this as a fatal startup
+    /// error and abort rather than continue with a broken router.
+    pub fn add_route(
+        &mut self,
+        path: &str,
+        service: Rc<RefCell<FinalRouteService>>,
+    ) -> Result<(), RouterError> {
         self.services.push(service);
         let index = self.services.len() - 1;
-        self.route.add_route(path, index);
+        self.route.add_route(path, index)
     }
 
     pub fn find_route(&self, path: &str) -> Option<Rc<RefCell<FinalRouteService>>> {

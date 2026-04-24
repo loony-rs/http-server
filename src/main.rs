@@ -36,22 +36,21 @@ pub struct DB {
 
 #[tokio::main]
 async fn main() {
-
     let conn = pg_connection().await;
 
-    let db = DB {
-        session: conn,
-    };
-    
-    HttpServer::new(move ||
-        App::new()
-        .app_data( AppState {
-            name: "loony".to_owned(),
-        })
-        .data(db.clone())
-        .routes(routes)
-    )
-    .bind(2000)
-    .run().await;
+    let db = DB { session: conn };
 
-}   
+    if let Err(e) = HttpServer::new(move || {
+        App::new()
+            .app_data(AppState { name: "loony".to_owned() })
+            .data(db.clone())
+            .routes(routes)
+    })
+    .bind(2000)
+    .run()
+    .await
+    {
+        eprintln!("server failed to start: {e}");
+        std::process::exit(1);
+    }
+}
