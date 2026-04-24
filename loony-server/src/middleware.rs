@@ -71,7 +71,6 @@ impl Middleware for Logger {
 
             let resp = next.call(req).await;
 
-            // Parse the status code from the serialised response first line.
             let status = resp
                 .0
                 .split("\r\n")
@@ -80,7 +79,8 @@ impl Middleware for Logger {
                 .unwrap_or("-")
                 .to_string();
 
-            println!("{method} {path} {status} {}ms", start.elapsed().as_millis());
+            let latency_ms = start.elapsed().as_millis();
+            tracing::info!(method = %method, path = %path, status = %status, latency_ms, "request");
             resp
         })
     }

@@ -21,7 +21,7 @@ use std::{
     marker::PhantomData,
     net::{TcpListener, TcpStream},
     rc::Rc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::net::TcpListener as TokioListener;
 use tokio::runtime::Builder as RuntimeBuilder;
@@ -66,18 +66,49 @@ impl Run {
     /// Serve all requests on a single TCP connection, reusing it while the
     /// client keeps the connection alive.
     async fn handle_connection(&self, stream: TcpStream) -> Result<(), ServerError> {
+        let peer = stream
+            .peer_addr()
+            .map(|a| a.to_string())
+            .unwrap_or_else(|_| "unknown".to_string());
+
         let mut connection = Connection::new(stream, self.read_timeout, self.write_timeout)?;
+
         loop {
             let bytes = match connection.read_http_response() {
                 Ok(b) => b,
-                // Client closed or went quiet — end the loop cleanly.
                 Err(e) if is_disconnect(&e) => break,
-                Err(e) => return Err(e.into()),
+                Err(e) => {
+                    tracing::error!(peer = %peer, error = %e, "connection read error");
+                    return Err(e.into());
+                },
             };
 
             let request = self.parse_request(&bytes)?;
+            let method = request.method.clone().unwrap_or_else(|| "-".to_string());
+            let path = request.uri.clone().unwrap_or_else(|| "-".to_string());
             let keep_alive = is_keep_alive(&request);
+
+            let start = Instant::now();
             let response = self.dispatch(request).await?;
+            let latency_ms = start.elapsed().as_millis();
+
+            // Extract status code from the first line of the serialised response.
+            let status = response
+                .split("\r\n")
+                .next()
+                .and_then(|l| l.split_whitespace().nth(1))
+                .unwrap_or("-")
+                .to_string();
+
+            tracing::info!(
+                peer   = %peer,
+                method = %method,
+                path   = %path,
+                status = %status,
+                latency_ms,
+                "request"
+            );
+
             let response = inject_connection_header(response, keep_alive);
             connection.write_str(&response)?;
 
@@ -85,6 +116,7 @@ impl Run {
                 break;
             }
         }
+
         connection.close().map_err(Into::into)
     }
 
@@ -110,7 +142,8 @@ impl Run {
         if let Some((service, params)) = self.route.find_route(&path) {
             self.call_service(service, params, request).await
         } else {
-            Ok(HttpResponse::bad_request().build())
+            tracing::warn!(path = %path, "no route matched");
+            Ok(HttpResponse::not_found().build())
         }
     }
 
@@ -131,7 +164,10 @@ impl Run {
             let future = service.borrow_mut().call(service_request);
             match future.await {
                 Ok(r) => r,
-                Err(_) => ServiceResponse(HttpResponse::internal_server_error().build()),
+                Err(_) => {
+                    tracing::error!("handler returned an error");
+                    ServiceResponse(HttpResponse::internal_server_error().build())
+                },
             }
         } else {
             let chain = build_middleware_chain(&self.middlewares, service);
@@ -370,7 +406,12 @@ where
     /// `Extensions`) stay `!Send` without requiring `Arc`.  `SO_REUSEPORT`
     /// lets all workers bind the same port; the kernel distributes incoming
     /// connections across them.
+    ///
+    /// Initialises the `tracing` subscriber if one has not already been set.
+    /// Override by calling [`init_tracing`] before `.run()` with your own
+    /// subscriber configuration.
     pub async fn run(self) -> Result<(), ServerError> {
+        init_tracing();
         let port = u16::try_from(self.port).map_err(|_| ServerError::ConfigError {
             message: format!("invalid port {}: must be 0–65535", self.port),
         })?;
@@ -416,6 +457,33 @@ where
         std::future::pending::<()>().await;
         Ok(())
     }
+}
+
+// ---------------------------------------------------------------------------
+// Tracing initialisation
+// ---------------------------------------------------------------------------
+
+/// Initialise the global `tracing` subscriber.
+///
+/// Uses `RUST_LOG` when set; defaults to `info` otherwise.
+/// Safe to call multiple times — subsequent calls are no-ops.
+///
+/// # Example log output
+///
+/// ```text
+/// 2024-01-15T10:23:45Z  INFO loony_server::server: request peer="127.0.0.1:54321" method="GET" path="/user/all" status="200" latency_ms=3
+/// 2024-01-15T10:23:45Z  WARN loony_server::server: no route matched path="/missing"
+/// 2024-01-15T10:23:45Z ERROR loony_server::server: connection read error peer="127.0.0.1:54322" error="connection reset by peer"
+/// ```
+pub fn init_tracing() {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(true)
+        .try_init()
+        .ok(); // ok() — no-op if a subscriber is already set
 }
 
 // ---------------------------------------------------------------------------
