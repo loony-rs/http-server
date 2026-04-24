@@ -1,6 +1,10 @@
 use crate::{
-    app_service::AppHttpService, extensions::Extensions, request::HttpRequest,
-    resource::FinalRouteService, service::ServiceRequest,
+    app_service::AppHttpService,
+    extensions::Extensions,
+    middleware::{BoxFuture, Middleware, Next},
+    request::HttpRequest,
+    resource::FinalRouteService,
+    service::{ServiceRequest, ServiceResponse},
 };
 use crate::{
     connection::Connection,
@@ -29,6 +33,7 @@ use tokio::runtime::Builder as RuntimeBuilder;
 struct Run {
     extensions: Rc<Extensions>,
     route: AllRouteServices,
+    middlewares: Vec<Rc<dyn Middleware>>,
     listener: TokioListener,
 }
 
@@ -107,12 +112,6 @@ impl Run {
         }
     }
 
-    /// Call the matched service and await its future on the tokio runtime.
-    ///
-    /// `service.borrow_mut().call(...)` creates the future and immediately
-    /// drops the `RefMut` borrow (at the statement semicolon). The returned
-    /// `Pin<Box<dyn Future>>` does not borrow from the `RefCell`, so it is
-    /// safe to `.await` after the borrow is released.
     async fn call_service(
         &self,
         service: Rc<RefCell<FinalRouteService>>,
@@ -125,14 +124,56 @@ impl Run {
             path_params: Rc::new(params),
         };
 
-        // The RefMut is dropped at the semicolon; the future outlives the borrow.
-        let future = service.borrow_mut().call(service_request);
+        let response = if self.middlewares.is_empty() {
+            // Fast path — no middleware overhead.
+            let future = service.borrow_mut().call(service_request);
+            match future.await {
+                Ok(r) => r,
+                Err(_) => ServiceResponse(HttpResponse::internal_server_error().build()),
+            }
+        } else {
+            let chain = build_middleware_chain(&self.middlewares, service);
+            chain(service_request).await
+        };
 
-        match future.await {
-            Ok(response) => Ok(response.0),
-            Err(_) => Ok(HttpResponse::internal_server_error().build()),
-        }
+        Ok(response.0)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Middleware chain builder
+// ---------------------------------------------------------------------------
+
+/// Build the execution chain from a slice of registered middlewares and a
+/// terminal `FinalRouteService`.
+///
+/// Middlewares are stored in registration order `[M0, M1, ...]`.  We fold
+/// over them in reverse so that `M0` ends up as the outermost wrapper —
+/// meaning `M0` runs first on the request path and last on the response path.
+fn build_middleware_chain(
+    middlewares: &[Rc<dyn Middleware>],
+    service: Rc<RefCell<FinalRouteService>>,
+) -> Rc<dyn Fn(ServiceRequest) -> BoxFuture<ServiceResponse>> {
+    // Innermost layer: call the actual route handler.
+    let base: Rc<dyn Fn(ServiceRequest) -> BoxFuture<ServiceResponse>> =
+        Rc::new(move |req: ServiceRequest| {
+            let svc = Rc::clone(&service);
+            Box::pin(async move {
+                let fut = svc.borrow_mut().call(req);
+                match fut.await {
+                    Ok(r) => r,
+                    Err(_) => ServiceResponse(HttpResponse::internal_server_error().build()),
+                }
+            }) as BoxFuture<ServiceResponse>
+        });
+
+    middlewares.iter().rev().fold(base, |inner, mw| {
+        let mw = Rc::clone(mw);
+        Rc::new(move |req: ServiceRequest| {
+            let next = Next::new(Rc::clone(&inner));
+            mw.handle(req, next)
+        }) as Rc<dyn Fn(ServiceRequest) -> BoxFuture<ServiceResponse>>
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -226,7 +267,7 @@ where
 
     /// Build services, then hand the live router to `Run`.
     pub async fn run(mut self, std_listener: TcpListener) {
-        let (extensions, route) = match self.new_service().await {
+        let (extensions, route, middlewares) = match self.new_service().await {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("service init failed: {e}");
@@ -245,19 +286,22 @@ where
         Run {
             extensions: Rc::new(extensions),
             route,
+            middlewares,
             listener: tokio_listener,
         }
         .run()
         .await;
     }
 
-    async fn new_service(&mut self) -> Result<(Extensions, AllRouteServices), ServerError> {
+    async fn new_service(
+        &mut self,
+    ) -> Result<(Extensions, AllRouteServices, Vec<Rc<dyn Middleware>>), ServerError> {
         let app = (self.app)();
         let app_factory = app.into_factory();
         let app_service_future = app_factory.new_service(());
 
         match app_service_future.await {
-            Ok(service) => Ok((service.extensions, service.route)),
+            Ok(service) => Ok((service.extensions, service.route, service.middlewares)),
             Err(_) => Err(ServerError::service_init_error(
                 "failed to initialise app services".to_string(),
             )),

@@ -4,6 +4,7 @@ pub mod error;
 pub mod extensions;
 pub mod extract;
 pub mod handler;
+pub mod middleware;
 pub mod request;
 pub mod resource;
 pub mod responder;
@@ -18,4 +19,5 @@ mod server;
 
 pub use app::App;
 pub use extract::{Json, Path};
+pub use middleware::{Cors, Logger, Middleware};
 pub use server::HttpServer;

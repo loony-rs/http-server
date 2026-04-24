@@ -1,4 +1,5 @@
 use crate::extensions::Extensions;
+use crate::middleware::Middleware;
 use crate::route::RouteServices;
 use crate::router::AllRouteServices;
 use crate::service::AppServiceFactory;
@@ -11,6 +12,7 @@ use std::rc::Rc;
 pub struct AppFactory {
     pub services: Rc<RefCell<Vec<Box<dyn AppServiceFactory>>>>,
     pub extensions: RefCell<Option<Extensions>>,
+    pub(crate) middlewares: Vec<Rc<dyn Middleware>>,
 }
 
 impl ServiceFactory for AppFactory {
@@ -51,6 +53,7 @@ impl ServiceFactory for AppFactory {
         ready(Ok(AppHttpService {
             route: radix_router,
             extensions,
+            middlewares: self.middlewares.clone(),
         }))
     }
 }
@@ -58,6 +61,7 @@ impl ServiceFactory for AppFactory {
 pub struct AppHttpService {
     pub(crate) extensions: Extensions,
     pub(crate) route: AllRouteServices,
+    pub(crate) middlewares: Vec<Rc<dyn Middleware>>,
 }
 
 impl Service for AppHttpService {

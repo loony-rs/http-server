@@ -5,6 +5,7 @@ use loony_service::IntoServiceFactory;
 
 use crate::app_service::AppFactory;
 use crate::extensions::Extensions;
+use crate::middleware::Middleware;
 use crate::route::Route;
 use crate::router::Router;
 use crate::service::AppServiceFactory;
@@ -12,6 +13,7 @@ use crate::service::AppServiceFactory;
 pub struct App {
     pub extensions: Extensions,
     pub services: Vec<Box<dyn AppServiceFactory>>,
+    pub(crate) middlewares: Vec<Rc<dyn Middleware>>,
 }
 
 impl App {
@@ -19,6 +21,7 @@ impl App {
         App {
             extensions: Extensions::new(),
             services: Vec::new(),
+            middlewares: Vec::new(),
         }
     }
 
@@ -37,12 +40,19 @@ impl App {
         self
     }
 
-    pub fn routes<'a, T>(mut self, cnfg: T) -> Self
+    pub fn routes<T>(mut self, cnfg: T) -> Self
     where
         T: Fn() -> Router,
     {
         let router = cnfg();
         self.services.extend(router.services);
+        self
+    }
+
+    /// Register a middleware.  The first `.wrap()` call is the outermost
+    /// layer: it runs first on the request path and last on the response path.
+    pub fn wrap<M: Middleware>(mut self, mw: M) -> Self {
+        self.middlewares.push(Rc::new(mw));
         self
     }
 }
@@ -52,6 +62,7 @@ impl IntoServiceFactory<AppFactory> for App {
         AppFactory {
             services: Rc::new(RefCell::new(self.services)),
             extensions: RefCell::new(Some(self.extensions)),
+            middlewares: self.middlewares,
         }
     }
 }
