@@ -13,6 +13,7 @@ use loony_service::{IntoServiceFactory, Service, ServiceFactory};
 use socket2::{Domain, Socket, Type};
 use std::{
     cell::RefCell,
+    io,
     marker::PhantomData,
     net::{TcpListener, TcpStream},
     rc::Rc,
@@ -55,15 +56,29 @@ impl Run {
         }
     }
 
-    /// Read the request, dispatch it, write the response.
+    /// Serve all requests on a single TCP connection, reusing it while the
+    /// client keeps the connection alive.
     async fn handle_connection(&self, stream: TcpStream) -> Result<(), ServerError> {
         let mut connection = Connection::new(stream)?;
-        let bytes_read = connection.read_http_response()?;
-        let request = self.parse_request(&bytes_read)?;
-        let response = self.dispatch(request).await?;
-        connection.write_str(&response)?;
-        connection.close()?;
-        Ok(())
+        loop {
+            let bytes = match connection.read_http_response() {
+                Ok(b) => b,
+                // Client closed or went quiet — end the loop cleanly.
+                Err(e) if is_disconnect(&e) => break,
+                Err(e) => return Err(e.into()),
+            };
+
+            let request = self.parse_request(&bytes)?;
+            let keep_alive = is_keep_alive(&request);
+            let response = self.dispatch(request).await?;
+            let response = inject_connection_header(response, keep_alive);
+            connection.write_str(&response)?;
+
+            if !keep_alive {
+                break;
+            }
+        }
+        connection.close().map_err(Into::into)
     }
 
     /// Parse raw bytes into a structured `HttpRequest`.
@@ -118,6 +133,68 @@ impl Run {
             Err(_) => Ok(HttpResponse::internal_server_error().build()),
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Keep-alive helpers
+// ---------------------------------------------------------------------------
+
+/// True for errors that mean the client side of the connection closed or timed
+/// out.  These end the keep-alive loop without logging an error.
+fn is_disconnect(e: &io::Error) -> bool {
+    use io::ErrorKind::*;
+    matches!(
+        e.kind(),
+        UnexpectedEof | ConnectionReset | ConnectionAborted | BrokenPipe | TimedOut | WouldBlock
+    )
+}
+
+/// Decide whether to keep the connection alive for this request.
+///
+/// HTTP/1.1 defaults to keep-alive; the client must send `Connection: close`
+/// to opt out.  HTTP/1.0 defaults to close; the client must send
+/// `Connection: keep-alive` to opt in.
+fn is_keep_alive(req: &HttpRequest) -> bool {
+    let wants_close = req
+        .headers
+        .iter()
+        .any(|(k, v)| k.eq_ignore_ascii_case("connection") && v.trim().eq_ignore_ascii_case("close"));
+    let wants_keep = req.headers.iter().any(|(k, v)| {
+        k.eq_ignore_ascii_case("connection") && v.trim().eq_ignore_ascii_case("keep-alive")
+    });
+
+    match req.version {
+        Some(1) => !wants_close,  // HTTP/1.1 — on by default
+        Some(0) => wants_keep,    // HTTP/1.0 — off by default
+        _ => false,
+    }
+}
+
+/// Inject a `Connection: keep-alive` or `Connection: close` header into an
+/// already-serialised HTTP response, unless the handler set it explicitly.
+///
+/// Insertion point: after the last header's `\r\n`, immediately before the
+/// blank line that separates headers from the body.
+fn inject_connection_header(mut response: String, keep_alive: bool) -> String {
+    let header_end = match response.find("\r\n\r\n") {
+        Some(p) => p,
+        None => return response,
+    };
+
+    // Skip if the handler already emitted a Connection header.
+    let already_set = response[..header_end]
+        .split("\r\n")
+        .skip(1) // skip status line
+        .any(|line| line.to_ascii_lowercase().starts_with("connection:"));
+
+    if already_set {
+        return response;
+    }
+
+    let value = if keep_alive { "keep-alive" } else { "close" };
+    // Insert after the last header's \r\n (header_end + 2), before the blank \r\n.
+    response.insert_str(header_end + 2, &format!("Connection: {value}\r\n"));
+    response
 }
 
 // ---------------------------------------------------------------------------
@@ -310,5 +387,80 @@ impl Default for ServerConfig {
             read_timeout: Duration::from_secs(30),
             write_timeout: Duration::from_secs(30),
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::request::HttpRequest;
+
+    fn make_request(version: u8, connection_header: Option<&str>) -> HttpRequest {
+        let mut req = HttpRequest::new();
+        req.version = Some(version);
+        if let Some(val) = connection_header {
+            req.headers.push(("Connection".to_string(), val.to_string()));
+        }
+        req
+    }
+
+    // --- is_keep_alive ---
+
+    #[test]
+    fn http11_keep_alive_by_default() {
+        assert!(is_keep_alive(&make_request(1, None)));
+    }
+
+    #[test]
+    fn http11_close_on_connection_close() {
+        assert!(!is_keep_alive(&make_request(1, Some("close"))));
+    }
+
+    #[test]
+    fn http10_close_by_default() {
+        assert!(!is_keep_alive(&make_request(0, None)));
+    }
+
+    #[test]
+    fn http10_keep_alive_on_opt_in() {
+        assert!(is_keep_alive(&make_request(0, Some("keep-alive"))));
+    }
+
+    // --- inject_connection_header ---
+
+    #[test]
+    fn inject_adds_keep_alive() {
+        let resp = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello".to_string();
+        let out = inject_connection_header(resp, true);
+        assert!(out.contains("Connection: keep-alive\r\n"));
+        assert!(out.contains("\r\n\r\nhello"));
+    }
+
+    #[test]
+    fn inject_adds_close() {
+        let resp = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello".to_string();
+        let out = inject_connection_header(resp, false);
+        assert!(out.contains("Connection: close\r\n"));
+    }
+
+    #[test]
+    fn inject_skips_if_already_present() {
+        let resp =
+            "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 5\r\n\r\nhello".to_string();
+        let out = inject_connection_header(resp.clone(), true);
+        // Must not add a second Connection header.
+        assert_eq!(out.matches("Connection:").count(), 1);
+    }
+
+    #[test]
+    fn inject_no_body() {
+        let resp = "HTTP/1.1 204 No Content\r\n\r\n".to_string();
+        let out = inject_connection_header(resp, true);
+        assert!(out.contains("Connection: keep-alive\r\n"));
+        assert!(out.ends_with("\r\n\r\n"));
     }
 }
