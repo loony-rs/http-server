@@ -19,6 +19,7 @@ use std::{
     time::Duration,
 };
 use tokio::net::TcpListener as TokioListener;
+use tokio::runtime::Builder as RuntimeBuilder;
 
 // ---------------------------------------------------------------------------
 // Run — owns the live router and accepts connections
@@ -39,9 +40,7 @@ impl Run {
         loop {
             match self.listener.accept().await {
                 Ok((tokio_stream, _addr)) => {
-                    // Convert to std TcpStream for the synchronous Connection
-                    // type. Step 5 replaces this with a fully async tokio I/O
-                    // path so the conversion goes away.
+                    // Convert to std TcpStream for the synchronous Connection type.
                     match tokio_stream.into_std() {
                         Ok(std_stream) => {
                             if let Err(e) = self.handle_connection(std_stream).await {
@@ -57,10 +56,6 @@ impl Run {
     }
 
     /// Read the request, dispatch it, write the response.
-    ///
-    /// The sync I/O calls (`Connection::new`, `read_http_response`,
-    /// `write_str`, `close`) block the thread. This is the known limitation
-    /// called out in the Step 1 tradeoffs and is fixed in Step 5.
     async fn handle_connection(&self, stream: TcpStream) -> Result<(), ServerError> {
         let mut connection = Connection::new(stream)?;
         let bytes_read = connection.read_http_response()?;
@@ -179,13 +174,6 @@ where
         .await;
     }
 
-    /// Initialise the app factory.
-    ///
-    /// Uses `.await` — the future is already `Ready` (see `AppFactory`), so
-    /// this resolves immediately. The route `register()` calls that happen
-    /// inside `AppFactory::new_service` use `futures::executor::block_on`
-    /// (see route.rs / resource.rs), which is safe for pure-computation
-    /// futures that do not touch tokio primitives.
     async fn new_service(&mut self) -> Result<(Extensions, AllRouteServices), ServerError> {
         let app = (self.app)();
         let app_factory = app.into_factory();
@@ -241,26 +229,26 @@ where
         self
     }
 
+    pub fn workers(mut self, count: usize) -> Self {
+        self.config.workers = count;
+        self
+    }
+
     /// Bind the socket and start accepting connections.
     ///
-    /// Returns `Err` if the port is invalid or the socket cannot be bound
-    /// (e.g. the port is already in use).
-    ///
-    /// Uses a `LocalSet` so that the worker task (which holds `Rc<...>`
-    /// types that are `!Send`) can be scheduled on the current thread
-    /// without requiring `Arc` or `Send` bounds.
-    ///
-    /// Step 5 replaces the `0..1` loop with a configurable worker count,
-    /// each pinned to its own OS thread via `tokio::task::spawn_blocking` +
-    /// a dedicated `LocalSet`.
+    /// Each worker gets its own OS thread running a `current_thread` Tokio
+    /// runtime with a `LocalSet`.  This lets `Rc<...>` types (`AllRouteServices`,
+    /// `Extensions`) stay `!Send` without requiring `Arc`.  `SO_REUSEPORT`
+    /// lets all workers bind the same port; the kernel distributes incoming
+    /// connections across them.
     pub async fn run(self) -> Result<(), ServerError> {
         let port = u16::try_from(self.port).map_err(|_| ServerError::ConfigError {
             message: format!("invalid port {}: must be 0–65535", self.port),
         })?;
 
-        let local = tokio::task::LocalSet::new();
+        let workers = self.config.workers;
 
-        for _ in 0..1 {
+        for i in 0..workers {
             let app = self.app.clone();
 
             let socket = Socket::new(Domain::IPV4, Type::STREAM, None)?;
@@ -270,12 +258,29 @@ where
             socket.listen(128)?;
             let listener: TcpListener = socket.into();
 
-            local.spawn_local(async move {
-                ServeHttpService::new(app).run(listener).await;
-            });
+            // Each worker owns its own single-thread runtime + LocalSet so
+            // !Send types (Rc, RefCell) never cross thread boundaries.
+            std::thread::Builder::new()
+                .name(format!("loony-worker-{i}"))
+                .spawn(move || {
+                    let rt = RuntimeBuilder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .expect("failed to build worker runtime");
+                    let local = tokio::task::LocalSet::new();
+                    local.spawn_local(async move {
+                        ServeHttpService::new(app).run(listener).await;
+                    });
+                    rt.block_on(local);
+                })
+                .map_err(|e| ServerError::ConfigError {
+                    message: format!("failed to spawn worker thread: {e}"),
+                })?;
         }
 
-        local.await;
+        // Workers loop forever on their own threads.
+        // Block until the process is signalled (e.g. Ctrl-C).
+        std::future::pending::<()>().await;
         Ok(())
     }
 }
@@ -287,6 +292,7 @@ where
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub port: u16,
+    pub workers: usize,
     pub max_connections: usize,
     pub read_timeout: Duration,
     pub write_timeout: Duration,
@@ -294,8 +300,12 @@ pub struct ServerConfig {
 
 impl Default for ServerConfig {
     fn default() -> Self {
+        let workers = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
         Self {
             port: 3005,
+            workers,
             max_connections: 1000,
             read_timeout: Duration::from_secs(30),
             write_timeout: Duration::from_secs(30),
